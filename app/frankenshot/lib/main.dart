@@ -34,6 +34,42 @@ class MachineConfig {
     required this.height,
     required this.horizontal,
   });
+
+  MachineConfig copyWith({
+    double? timeBetweenBalls,
+    int? speed,
+    int? spin,
+    int? height,
+    int? horizontal,
+  }) {
+    return MachineConfig(
+      timeBetweenBalls: timeBetweenBalls ?? this.timeBetweenBalls,
+      speed: speed ?? this.speed,
+      spin: spin ?? this.spin,
+      height: height ?? this.height,
+      horizontal: horizontal ?? this.horizontal,
+    );
+  }
+}
+
+class ConfigList {
+  final String name;
+  final List<MachineConfig> configs;
+
+  const ConfigList({
+    required this.name,
+    required this.configs,
+  });
+
+  ConfigList copyWith({
+    String? name,
+    List<MachineConfig>? configs,
+  }) {
+    return ConfigList(
+      name: name ?? this.name,
+      configs: configs ?? this.configs,
+    );
+  }
 }
 
 class MachineStatusScreen extends StatefulWidget {
@@ -44,20 +80,66 @@ class MachineStatusScreen extends StatefulWidget {
 }
 
 class _MachineStatusScreenState extends State<MachineStatusScreen> {
-  bool _isFeeding = true;
+  bool _isFeeding = false;
+  int _currentConfigIndex = 0;
+  ConfigList? _selectedConfigList;
 
-  final MachineConfig _config = const MachineConfig(
-    timeBetweenBalls: 3.0,
-    speed: 5,
-    spin: 0,
-    height: 5,
-    horizontal: 0,
-  );
+  final List<ConfigList> _configLists = [
+    const ConfigList(
+      name: 'Warm Up',
+      configs: [
+        MachineConfig(timeBetweenBalls: 5.0, speed: 3, spin: 0, height: 5, horizontal: 0),
+        MachineConfig(timeBetweenBalls: 4.0, speed: 4, spin: 0, height: 5, horizontal: 0),
+        MachineConfig(timeBetweenBalls: 3.0, speed: 5, spin: 0, height: 5, horizontal: 0),
+      ],
+    ),
+    const ConfigList(
+      name: 'Topspin Practice',
+      configs: [
+        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 3, height: 6, horizontal: 0),
+        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 4, height: 7, horizontal: -2),
+        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 4, height: 7, horizontal: 2),
+      ],
+    ),
+  ];
+
+  MachineConfig? get _currentConfig {
+    if (_selectedConfigList == null || _selectedConfigList!.configs.isEmpty) {
+      return null;
+    }
+    return _selectedConfigList!.configs[_currentConfigIndex % _selectedConfigList!.configs.length];
+  }
 
   void _toggleFeeding() {
     setState(() {
       _isFeeding = !_isFeeding;
     });
+  }
+
+  void _manualFeed() {
+    // TODO: Send manual feed command to machine
+  }
+
+  void _selectConfigList(ConfigList configList) {
+    setState(() {
+      _selectedConfigList = configList;
+      _currentConfigIndex = 0;
+      _isFeeding = false;
+    });
+  }
+
+  void _createNewConfigList() async {
+    final result = await Navigator.push<ConfigList>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ConfigListEditorScreen(),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _configLists.add(result);
+      });
+    }
   }
 
   @override
@@ -74,7 +156,9 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
           children: [
             _buildStatusCard(),
             const SizedBox(height: 24),
-            _buildConfigCard(),
+            _buildCurrentConfigCard(),
+            const SizedBox(height: 24),
+            _buildConfigListsCard(),
           ],
         ),
       ),
@@ -115,46 +199,141 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
                 minimumSize: const Size(200, 48),
               ),
             ),
+            if (!_isFeeding) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _selectedConfigList != null ? _manualFeed : null,
+                icon: const Icon(Icons.sports_tennis),
+                label: const Text('Manual Feed'),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildConfigCard() {
+  Widget _buildConfigListsCard() {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Current Configuration',
-              style: Theme.of(context).textTheme.titleLarge,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Configuration Lists',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                IconButton(
+                  onPressed: _createNewConfigList,
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Create new list',
+                ),
+              ],
+            ),
+            const Divider(),
+            if (_configLists.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16.0),
+                child: Text('No configuration lists yet. Tap + to create one.'),
+              )
+            else
+              ..._configLists.map((configList) => _buildConfigListTile(configList)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfigListTile(ConfigList configList) {
+    final isSelected = _selectedConfigList?.name == configList.name;
+    return ListTile(
+      title: Text(
+        configList.name,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      subtitle: Text('${configList.configs.length} steps'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isSelected)
+            const Chip(label: Text('Running'))
+          else
+            FilledButton.tonal(
+              onPressed: () => _selectConfigList(configList),
+              child: const Text('Run'),
+            ),
+          IconButton(
+            onPressed: () => _deleteConfigList(configList),
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteConfigList(ConfigList configList) {
+    setState(() {
+      _configLists.remove(configList);
+      if (_selectedConfigList?.name == configList.name) {
+        _selectedConfigList = null;
+      }
+    });
+  }
+
+  Widget _buildCurrentConfigCard() {
+    final config = _currentConfig;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Current Configuration',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                if (_selectedConfigList != null)
+                  Text(
+                    '${_currentConfigIndex + 1}/${_selectedConfigList!.configs.length}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey,
+                        ),
+                  ),
+              ],
             ),
             const Divider(),
             _buildConfigRow(
               'Time Between Balls',
-              '${_config.timeBetweenBalls} seconds',
+              config != null ? '${config.timeBetweenBalls} seconds' : '-',
+              range: '1-20',
             ),
             _buildConfigRow(
               'Speed',
-              '${_config.speed}',
+              config != null ? '${config.speed}' : '-',
               range: '0-10',
             ),
             _buildConfigRow(
               'Spin',
-              '${_config.spin}',
+              config != null ? '${config.spin}' : '-',
               range: '-5 to 5',
             ),
             _buildConfigRow(
               'Height',
-              '${_config.height}',
+              config != null ? '${config.height}' : '-',
               range: '0-10',
             ),
             _buildConfigRow(
               'Horizontal',
-              '${_config.horizontal}',
+              config != null ? '${config.horizontal}' : '-',
               range: '-5 to 5',
             ),
           ],
@@ -190,6 +369,262 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ConfigListEditorScreen extends StatefulWidget {
+  const ConfigListEditorScreen({super.key});
+
+  @override
+  State<ConfigListEditorScreen> createState() => _ConfigListEditorScreenState();
+}
+
+class _ConfigListEditorScreenState extends State<ConfigListEditorScreen> {
+  final _nameController = TextEditingController();
+  final List<MachineConfig> _configs = [];
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _addConfig() async {
+    final result = await showDialog<MachineConfig>(
+      context: context,
+      builder: (context) => const ConfigEditorDialog(),
+    );
+    if (result != null) {
+      setState(() {
+        _configs.add(result);
+      });
+    }
+  }
+
+  void _removeConfig(int index) {
+    setState(() {
+      _configs.removeAt(index);
+    });
+  }
+
+  void _save() {
+    if (_nameController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a name')),
+      );
+      return;
+    }
+    if (_configs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add at least one configuration')),
+      );
+      return;
+    }
+    Navigator.pop(
+      context,
+      ConfigList(name: _nameController.text, configs: _configs),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('New Configuration List'),
+        actions: [
+          TextButton(
+            onPressed: _save,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'List Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Configurations',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                FilledButton.icon(
+                  onPressed: _addConfig,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_configs.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text(
+                    'No configurations yet.\nTap "Add" to create one.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else
+              ...List.generate(_configs.length, (index) {
+                final config = _configs[index];
+                return Card(
+                  child: ListTile(
+                    title: Text('Config ${index + 1}'),
+                    subtitle: Text(
+                      'Speed: ${config.speed}, Spin: ${config.spin}, '
+                      'Height: ${config.height}, Horizontal: ${config.horizontal}, '
+                      'Time: ${config.timeBetweenBalls}s',
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete),
+                      onPressed: () => _removeConfig(index),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ConfigEditorDialog extends StatefulWidget {
+  const ConfigEditorDialog({super.key});
+
+  @override
+  State<ConfigEditorDialog> createState() => _ConfigEditorDialogState();
+}
+
+class _ConfigEditorDialogState extends State<ConfigEditorDialog> {
+  double _timeBetweenBalls = 3.0;
+  int _speed = 5;
+  int _spin = 0;
+  int _height = 5;
+  int _horizontal = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Configuration'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildSlider(
+              label: 'Time Between Balls',
+              value: _timeBetweenBalls,
+              min: 1,
+              max: 20,
+              divisions: 19,
+              onChanged: (v) => setState(() => _timeBetweenBalls = v),
+              displayValue: '${_timeBetweenBalls.toStringAsFixed(1)}s',
+            ),
+            _buildSlider(
+              label: 'Speed',
+              value: _speed.toDouble(),
+              min: 0,
+              max: 10,
+              divisions: 10,
+              onChanged: (v) => setState(() => _speed = v.round()),
+              displayValue: '$_speed',
+            ),
+            _buildSlider(
+              label: 'Spin',
+              value: _spin.toDouble(),
+              min: -5,
+              max: 5,
+              divisions: 10,
+              onChanged: (v) => setState(() => _spin = v.round()),
+              displayValue: '$_spin',
+            ),
+            _buildSlider(
+              label: 'Height',
+              value: _height.toDouble(),
+              min: 0,
+              max: 10,
+              divisions: 10,
+              onChanged: (v) => setState(() => _height = v.round()),
+              displayValue: '$_height',
+            ),
+            _buildSlider(
+              label: 'Horizontal',
+              value: _horizontal.toDouble(),
+              min: -5,
+              max: 5,
+              divisions: 10,
+              onChanged: (v) => setState(() => _horizontal = v.round()),
+              displayValue: '$_horizontal',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            MachineConfig(
+              timeBetweenBalls: _timeBetweenBalls,
+              speed: _speed,
+              spin: _spin,
+              height: _height,
+              horizontal: _horizontal,
+            ),
+          ),
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+    required String displayValue,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label),
+              Text(displayValue, style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
           ),
         ],
       ),
