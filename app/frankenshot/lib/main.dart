@@ -1,121 +1,197 @@
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const FrankenshotApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class FrankenshotApp extends StatelessWidget {
+  const FrankenshotApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Frankenshot',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MachineStatusScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class MachineConfig {
+  final double timeBetweenBalls;
+  final int speed;
+  final int spin;
+  final int height;
+  final int horizontal;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  const MachineConfig({
+    required this.timeBetweenBalls,
+    required this.speed,
+    required this.spin,
+    required this.height,
+    required this.horizontal,
+  });
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class MachineStatusScreen extends StatefulWidget {
+  const MachineStatusScreen({super.key});
 
-  void _incrementCounter() {
+  @override
+  State<MachineStatusScreen> createState() => _MachineStatusScreenState();
+}
+
+class _MachineStatusScreenState extends State<MachineStatusScreen> {
+  bool _isFeeding = true;
+
+  final MachineConfig _config = const MachineConfig(
+    timeBetweenBalls: 3.0,
+    speed: 5,
+    spin: 0,
+    height: 5,
+    horizontal: 0,
+  );
+
+  void _toggleFeeding() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _isFeeding = !_isFeeding;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Frankenshot'),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            _buildStatusCard(),
+            const SizedBox(height: 24),
+            _buildConfigCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _isFeeding ? Icons.play_circle : Icons.pause_circle,
+                  size: 48,
+                  color: _isFeeding ? Colors.green : Colors.orange,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _isFeeding ? 'Feeding' : 'Paused',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: _isFeeding ? Colors.green : Colors.orange,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _toggleFeeding,
+              icon: Icon(_isFeeding ? Icons.pause : Icons.play_arrow),
+              label: Text(_isFeeding ? 'Pause' : 'Resume'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _isFeeding ? Colors.orange : Colors.green,
+                minimumSize: const Size(200, 48),
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  Widget _buildConfigCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current Configuration',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const Divider(),
+            _buildConfigRow(
+              'Time Between Balls',
+              '${_config.timeBetweenBalls} seconds',
+            ),
+            _buildConfigRow(
+              'Speed',
+              '${_config.speed}',
+              range: '0-10',
+            ),
+            _buildConfigRow(
+              'Spin',
+              '${_config.spin}',
+              range: '-5 to 5',
+            ),
+            _buildConfigRow(
+              'Height',
+              '${_config.height}',
+              range: '0-10',
+            ),
+            _buildConfigRow(
+              'Horizontal',
+              '${_config.horizontal}',
+              range: '-5 to 5',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfigRow(String label, String value, {String? range}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              if (range != null)
+                Text(
+                  range,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                ),
+            ],
+          ),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+        ],
       ),
     );
   }

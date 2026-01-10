@@ -1,30 +1,38 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:frankenshot/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('Machine status screen shows feeding state', (WidgetTester tester) async {
+    await tester.pumpWidget(const FrankenshotApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Frankenshot'), findsOneWidget);
+    expect(find.text('Feeding'), findsOneWidget);
+    expect(find.text('Pause'), findsOneWidget);
+    expect(find.text('Current Configuration'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('Pause button toggles feeding state', (WidgetTester tester) async {
+    await tester.pumpWidget(const FrankenshotApp());
+
+    expect(find.text('Feeding'), findsOneWidget);
+    expect(find.text('Pause'), findsOneWidget);
+
+    await tester.tap(find.text('Pause'));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Paused'), findsOneWidget);
+    expect(find.text('Resume'), findsOneWidget);
+  });
+
+  testWidgets('Configuration values are displayed', (WidgetTester tester) async {
+    await tester.pumpWidget(const FrankenshotApp());
+
+    expect(find.text('Time Between Balls'), findsOneWidget);
+    expect(find.text('3.0 seconds'), findsOneWidget);
+    expect(find.text('Speed'), findsOneWidget);
+    expect(find.text('Spin'), findsOneWidget);
+    expect(find.text('Height'), findsOneWidget);
+    expect(find.text('Horizontal'), findsOneWidget);
   });
 }
