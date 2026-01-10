@@ -4,13 +4,14 @@ The esp board only has current state and makes it happen. The state is split int
 - spin, pos/neg factor
 - height, e.g. percentage
 - horizontal, pos/neg factor
-After ball fed the esp will move on to the next configuration in the list, or wrap back to the first one if last. The current state is 
-- feeding, boolean, false is paused. if this is on it will automatically go through the program with feeds, if off it will stay at last config
-- next configuration number
-In terms of ble characterisitics, the program and current state are characteristics. Another characteristic is manual feed, which sets state to pause and triggers a ball feed. So the characteristics are
+The current state is 
+- feeding, boolean, false is paused
+- next configuration number, number
+- manual feed, bool
+In terms of ble characterisitics, the program and current state are characteristics. Another characteristic is manual feed.
 - program, multiple of five numbers to represent configs (read/write)
 - state, bool and number, can be two numbers (read/write)
 - manual feed, bool (write)
-On start-up some default state will be used, with feeding set to on.
+On start-up some default state will be used, with feeding set to on. After ball fed the esp will start countdown of that config timer, move on to the next configuration in the list, get to this position, and after countdown expires move on again, or wrap back to the first one if last. On manual feed sets state to pause and triggers a ball feed, sets manual feed back to false.
 
 The app will send state updates via ble, with each state field being a ble characteristic. This means the app will run programs, pause and start etc. The main screen of the app shows the current state and let's user manually adjust every characteristic
