@@ -14,40 +14,12 @@ This example is extended from NimBLE Connection Example, and further introduces
 
 To test this demo, install *nRF Connect for Mobile* on your phone. 
 
+https://docs.espressif.com/projects/esp-idf/en/v4.4.3/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html
+
 Please refer to [BLE Introduction](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/ble/get-started/ble-introduction.html#:~:text=%E4%BE%8B%E7%A8%8B%E5%AE%9E%E8%B7%B5)
 for detailed example introduction and code explanation.
 
-## Try It Yourself
-
-### Set Target
-
-Before project configuration and build, be sure to set the correct chip target using:
-
-``` shell
-idf.py set-target <chip_name>
-```
-
-For example, if you're using ESP32, then input
-
-``` Shell
-idf.py set-target esp32
-```
-
-### Build and Flash
-
-Run the following command to build, flash and monitor the project.
-
-``` Shell
-idf.py -p <PORT> flash monitor
-```
-
-For example, if the corresponding serial port is `/dev/ttyACM0`, then it goes
-
-``` Shell
-idf.py -p /dev/ttyACM0 flash monitor
-```
-
-(To exit the serial monitor, type ``Ctrl-]``.)
+[VSCode Extension docs](https://github.com/espressif/vscode-esp-idf-extension/blob/master/README.md#using-the-esp-idf-extension-for-vs-code)
 
 See the [Getting Started Guide](https://idf.espressif.com/) for full steps to configure and use ESP-IDF to build projects.
 
