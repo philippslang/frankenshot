@@ -1,26 +1,16 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "common.h"
 #include "gap.h"
 #include "gatt_svc.h"
 #include "heart_rate.h"
 #include "led.h"
 
-
-/* Library function declarations */
 void ble_store_config_init(void);
 
-/* Private function declarations */
 static void on_stack_reset(int reason);
 static void on_stack_sync(void);
 static void nimble_host_config_init(void);
 static void nimble_host_task(void *param);
 
-/* Private functions */
 /*
  *  Stack event callback functions
  *      - on_stack_reset is called when host resets BLE stack due to errors
@@ -80,11 +70,9 @@ static void heart_rate_task(void *param) {
 }
 
 void app_main(void) {
-    /* Local variables */
     int rc = 0;
     esp_err_t ret;
 
-    /* LED initialization */
     led_init();
 
     /*
