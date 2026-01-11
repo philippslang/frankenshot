@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./build/**)",
+      "Read(./managed_components/**)",
+      "Read(./sdkconfig.*)"
+    ]
+  }
+}
