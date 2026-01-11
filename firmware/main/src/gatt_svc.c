@@ -8,12 +8,15 @@
 #include "common.h"
 #include "heart_rate.h"
 #include "led.h"
+#include <string.h>
 
 /* Private function declarations */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg);
 static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                           struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 /* Private variables */
 /* Heart rate service */
@@ -33,6 +36,20 @@ static uint16_t led_chr_val_handle;
 static const ble_uuid128_t led_chr_uuid =
     BLE_UUID128_INIT(0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef,
                      0x12, 0x12, 0x25, 0x15, 0x00, 0x00);
+
+/* Frankenshot service */
+static const ble_uuid128_t frankenshot_svc_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x00, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+static uint16_t frankenshot_config_chr_val_handle;
+static const ble_uuid128_t frankenshot_config_chr_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x01, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+
+/* Frankenshot configuration data */
+static frankenshot_config_t frankenshot_config = {
+    .speed = 0
+};
 
 /* GATT services table */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
@@ -60,6 +77,19 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                                          .access_cb = led_chr_access,
                                          .flags = BLE_GATT_CHR_F_WRITE,
                                          .val_handle = &led_chr_val_handle},
+                                        {0}},
+    },
+
+    /* Frankenshot service */
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &frankenshot_svc_uuid.u,
+        .characteristics =
+            (struct ble_gatt_chr_def[]){/* Configuration characteristic */
+                                        {.uuid = &frankenshot_config_chr_uuid.u,
+                                         .access_cb = frankenshot_config_chr_access,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+                                         .val_handle = &frankenshot_config_chr_val_handle},
                                         {0}},
     },
 
@@ -164,6 +194,55 @@ error:
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    int rc = 0;
+
+    switch (ctxt->op) {
+
+    case BLE_GATT_ACCESS_OP_READ_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot config read; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_config_chr_val_handle) {
+            rc = os_mbuf_append(ctxt->om, &frankenshot_config,
+                                sizeof(frankenshot_config));
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        goto error;
+
+    case BLE_GATT_ACCESS_OP_WRITE_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot config write; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_config_chr_val_handle) {
+            if (ctxt->om->om_len == sizeof(frankenshot_config)) {
+                memcpy(&frankenshot_config, ctxt->om->om_data, sizeof(frankenshot_config));
+                ESP_LOGI(TAG, "frankenshot config updated: speed=%d", frankenshot_config.speed);
+            } else {
+                ESP_LOGE(TAG, "invalid config size: %d (expected %d)",
+                         ctxt->om->om_len, sizeof(frankenshot_config));
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            return rc;
+        }
+        goto error;
+
+    default:
+        goto error;
+    }
+
+error:
+    ESP_LOGE(TAG,
+             "unexpected access operation to frankenshot config characteristic, opcode: %d",
+             ctxt->op);
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* Public functions */
 void send_heart_rate_indication(void) {
     if (heart_rate_ind_status && heart_rate_chr_conn_handle_inited) {
@@ -238,6 +317,10 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
         heart_rate_chr_conn_handle_inited = true;
         heart_rate_ind_status = event->subscribe.cur_indicate;
     }
+}
+
+const frankenshot_config_t *get_frankenshot_config(void) {
+    return &frankenshot_config;
 }
 
 /*

@@ -8,14 +8,7 @@ ESP32-S3 BLE (Bluetooth Low Energy) GATT Server firmware built with ESP-IDF v5.5
 
 ## Build Commands
 
-```bash
-idf.py build                    # Build the project
-idf.py flash                    # Flash to device (COM6)
-idf.py monitor                  # Open serial monitor
-idf.py build flash monitor      # Full workflow
-idf.py menuconfig               # Interactive configuration
-idf.py fullclean                # Clean build directory
-```
+For now the user has to build manually, these commands are not available to Claude Code.
 
 ## Architecture
 
@@ -54,8 +47,6 @@ main/
 ## Hardware Configuration
 
 - Target: ESP32-S3
-- LED GPIO: Pin 8 (configurable in Kconfig)
-- Debug port: COM6 (configured in `.vscode/settings.json`)
 
 ## Testing
 
