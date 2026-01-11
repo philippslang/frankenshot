@@ -1,15 +1,8 @@
-/*
- * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "gatt_svc.h"
 #include "common.h"
 #include "heart_rate.h"
 #include "led.h"
 #include <string.h>
-
 /* Private function declarations */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -18,7 +11,6 @@ static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                          struct ble_gatt_access_ctxt *ctxt, void *arg);
 
-/* Private variables */
 /* Heart rate service */
 static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x180D);
 
@@ -48,7 +40,8 @@ static const ble_uuid128_t frankenshot_config_chr_uuid =
 
 /* Frankenshot configuration data */
 static frankenshot_config_t frankenshot_config = {
-    .speed = 0
+    .speed = 0,
+    .height = 0
 };
 
 /* GATT services table */
@@ -98,10 +91,8 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     },
 };
 
-/* Private functions */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
     int rc = 0;
 
     /* Handle access events */
@@ -144,7 +135,6 @@ error:
 
 static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                           struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
     int rc = 0;
 
     /* Handle access events */
@@ -222,7 +212,7 @@ static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_han
         if (attr_handle == frankenshot_config_chr_val_handle) {
             if (ctxt->om->om_len == sizeof(frankenshot_config)) {
                 memcpy(&frankenshot_config, ctxt->om->om_data, sizeof(frankenshot_config));
-                ESP_LOGI(TAG, "frankenshot config updated: speed=%d", frankenshot_config.speed);
+                ESP_LOGI(TAG, "frankenshot config updated: speed=%d height=%d", frankenshot_config.speed, frankenshot_config.height);
             } else {
                 ESP_LOGE(TAG, "invalid config size: %d (expected %d)",
                          ctxt->om->om_len, sizeof(frankenshot_config));
@@ -243,7 +233,6 @@ error:
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* Public functions */
 void send_heart_rate_indication(void) {
     if (heart_rate_ind_status && heart_rate_chr_conn_handle_inited) {
         ble_gatts_indicate(heart_rate_chr_conn_handle,
@@ -259,7 +248,6 @@ void send_heart_rate_indication(void) {
  *      - Descriptor register event
  */
 void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
-    /* Local variables */
     char buf[BLE_UUID_STR_LEN];
 
     /* Handle GATT attributes register events */
@@ -299,7 +287,6 @@ void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
  *  GATT server subscribe event callback
  *      1. Update heart rate subscription status
  */
-
 void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
     /* Check connection handle */
     if (event->subscribe.conn_handle != BLE_HS_CONN_HANDLE_NONE) {

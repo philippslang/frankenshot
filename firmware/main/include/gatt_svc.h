@@ -1,12 +1,6 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
 #ifndef GATT_SVR_H
 #define GATT_SVR_H
 
-/* Includes */
 #include <stdint.h>
 
 /* NimBLE GATT APIs */
@@ -19,6 +13,7 @@
 /* Frankenshot configuration structure */
 typedef struct {
     uint8_t speed;
+    uint8_t height;
 } frankenshot_config_t;
 
 /* Public function declarations */

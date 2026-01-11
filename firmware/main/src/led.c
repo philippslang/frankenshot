@@ -37,7 +37,6 @@ void led_init(void)
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
     /* Set all LED off to clear all pixels */
     led_strip_clear(led_strip);
-    led_on();
     ESP_LOGI("LED", "initialized LED strip on %d", BLINK_GPIO);
 }
 

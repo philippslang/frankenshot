@@ -24,8 +24,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
-/* Defines */
-#define TAG "NimBLE_GATT_Server"
-#define DEVICE_NAME "NimBLE_GATT"
+#define TAG "Frankenshot_Server"
+#define DEVICE_NAME "Frankenshot"
 
 #endif // COMMON_H

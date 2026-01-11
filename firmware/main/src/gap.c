@@ -1,32 +1,22 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "gap.h"
 #include "common.h"
 #include "gatt_svc.h"
 
-/* Private function declarations */
 inline static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
 static void start_advertising(void);
 static int gap_event_handler(struct ble_gap_event *event, void *arg);
 
-/* Private variables */
 static uint8_t own_addr_type;
 static uint8_t addr_val[6] = {0};
 static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'e', 's', 'p', 'r', 'e', 's', 's', 'i', 'f', '.', 'c', 'o', 'm'};
 
-/* Private functions */
 inline static void format_addr(char *addr_str, uint8_t addr[]) {
     sprintf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1],
             addr[2], addr[3], addr[4], addr[5]);
 }
 
 static void print_conn_desc(struct ble_gap_conn_desc *desc) {
-    /* Local variables */
     char addr_str[18] = {0};
 
     /* Connection handle */
@@ -52,7 +42,6 @@ static void print_conn_desc(struct ble_gap_conn_desc *desc) {
 }
 
 static void start_advertising(void) {
-    /* Local variables */
     int rc = 0;
     const char *name;
     struct ble_hs_adv_fields adv_fields = {0};
@@ -131,7 +120,6 @@ static void start_advertising(void) {
  * ble_gap_adv_start API and called when a GAP event arrives
  */
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
-    /* Local variables */
     int rc = 0;
     struct ble_gap_conn_desc desc;
 
@@ -255,9 +243,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 }
 
 
-/* Public functions */
 void adv_init(void) {
-    /* Local variables */
     int rc = 0;
     char addr_str[18] = {0};
 
@@ -284,12 +270,10 @@ void adv_init(void) {
     format_addr(addr_str, addr_val);
     ESP_LOGI(TAG, "device address: %s", addr_str);
 
-    /* Start advertising. */
     start_advertising();
 }
 
 int gap_init(void) {
-    /* Local variables */
     int rc = 0;
 
     /* Call NimBLE GAP initialization API */
