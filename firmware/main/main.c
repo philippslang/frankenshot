@@ -61,6 +61,9 @@ static void heart_rate_task(void *param) {
         /* Send heart rate indication if enabled */
         send_heart_rate_indication();
 
+        /* Send frankenshot config indication if enabled */
+        send_frankenshot_config_indication();
+
         /* Sleep */
         vTaskDelay(HEART_RATE_TASK_PERIOD);
     }

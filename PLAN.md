@@ -9,8 +9,9 @@ The current state is
 - next configuration number, number
 - manual feed, bool
 In terms of ble characterisitics, the program and current state are characteristics. Another characteristic is manual feed.
+- current config (read)
 - program, multiple of five numbers to represent configs (read/write)
-- state, bool and number, can be two numbers (read/write)
+- feeding (read/write)
 - manual feed, bool (write)
 On start-up some default state will be used, with feeding set to on. After ball fed the esp will start countdown of that config timer, move on to the next configuration in the list, get to this position, and after countdown expires move on again, or wrap back to the first one if last. On manual feed sets state to pause and triggers a ball feed, sets manual feed back to false.
 
