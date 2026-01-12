@@ -20,6 +20,15 @@ typedef struct {
     uint8_t horizontal;
 } frankenshot_config_t;
 
+/* Frankenshot program structure */
+#define FRANKENSHOT_PROGRAM_MAX_CONFIGS 8
+
+typedef struct {
+    uint8_t id;
+    uint8_t count;  /* number of configs in use */
+    frankenshot_config_t configs[FRANKENSHOT_PROGRAM_MAX_CONFIGS];
+} frankenshot_program_t;
+
 /* Public function declarations */
 void send_heart_rate_indication(void);
 void send_frankenshot_config_indication(void);
