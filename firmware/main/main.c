@@ -38,7 +38,6 @@ static void nimble_host_config_init(void) {
 }
 
 static void nimble_host_task(void *param) {
-    /* Task entry log */
     ESP_LOGI(TAG, "nimble host task has been started!");
 
     /* This function won't return until nimble_port_stop() is executed */
@@ -48,15 +47,12 @@ static void nimble_host_task(void *param) {
     vTaskDelete(NULL);
 }
 
-static void heart_rate_task(void *param) {
-    /* Task entry log */
-    ESP_LOGI(TAG, "heart rate task has been started!");
+static void indication_task(void *param) {
+    ESP_LOGI(TAG, "indication task has been started!");
 
-    /* Loop forever */
     while (1) {
-        /* Update heart rate value every 1 second */
         update_heart_rate();
-        ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
+        // ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
 
         /* Send heart rate indication if enabled */
         send_heart_rate_indication();
@@ -122,6 +118,6 @@ void app_main(void) {
 
     /* Start NimBLE host task thread and return */
     xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
-    xTaskCreate(heart_rate_task, "Heart Rate", 4*1024, NULL, 5, NULL);
+    xTaskCreate(indication_task, "Indicators", 4*1024, NULL, 5, NULL);
     return;
 }

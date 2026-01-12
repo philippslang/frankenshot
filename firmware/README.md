@@ -1,13 +1,6 @@
-# NimBLE GATT Server Example
+# Frankenshot NimBLE GATT Server
 
 ## Overview
-
-This example is extended from NimBLE Connection Example, and further introduces
-
-1. How to implement a GATT server using GATT services table
-2. How to handle characteristic access requests
-    1. Write access demonstrated by LED control
-    2. Read and indicate access demonstrated by heart rate measurement(mocked)
 
 To test this demo, install *nRF Connect for Mobile* on your phone. 
 
@@ -25,7 +18,7 @@ See the [Getting Started Guide](https://idf.espressif.com/) for full steps to co
 ### Overview
 
 1. Initialization
-    1. Initialize LED, NVS flash, NimBLE host stack, GAP service
+    1. Initialize LED, NimBLE host stack, GAP service
     2. Initialize GATT service and add services to registration queue
     3. Configure NimBLE host stack and start NimBLE host task thread, GATT services will be registered automatically when NimBLE host stack started
     4. Start heart rate update task thread
