@@ -61,7 +61,10 @@ static const ble_uuid128_t frankenshot_manualfeed_chr_uuid =
 /* Frankenshot configuration data */
 static frankenshot_config_t frankenshot_config = {
     .speed = 0,
-    .height = 0
+    .height = 0,
+    .time_between_balls = 0,
+    .spin = 0,
+    .horizontal = 0
 };
 
 /* Frankenshot feeding state */

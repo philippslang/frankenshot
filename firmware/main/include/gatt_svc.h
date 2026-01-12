@@ -15,6 +15,9 @@
 typedef struct {
     uint8_t speed;
     uint8_t height;
+    uint8_t time_between_balls;
+    uint8_t spin;
+    uint8_t horizontal;
 } frankenshot_config_t;
 
 /* Public function declarations */
