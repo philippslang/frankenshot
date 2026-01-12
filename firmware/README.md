@@ -344,28 +344,3 @@ If everything goes well, you should be able to see 4 services when connected to 
 Click on Automation IO Service, you should be able to see LED characteristic. Click on upload button, you should be able to write `ON` or `OFF` value. Send it to the device, LED will be turned on or off following your instruction.
 
 Click on Heart Rate Service, you should be able to see Heart Rate Measurement characteristic. Click on download button, you should be able to see the latest heart rate measurement mock value, and it should be consistent with what is shown on serial output. Click on subscribe button, you should be able to see the heart rate measurement mock value updated every second.
-
-
-## Characteristics info
- typedef struct {
-      uint8_t id;
-      uint8_t count;  /* number of configs in use (max 8) */
-      frankenshot_config_t configs[8];
-  } frankenshot_program_t;
-
-  Characteristic details:
-  - UUID: 00000004-4652-414e-4b45-4e53484f5401
-  - Properties: Read/Write
-  - Descriptor: "Program"
-
-  Data format:
-  ┌────────┬───────────┬─────────────────────────────────────────────────────────────────────┐
-  │ Offset │   Size    │                                Field                                │
-  ├────────┼───────────┼─────────────────────────────────────────────────────────────────────┤
-  │ 0      │ 1         │ id                                                                  │
-  ├────────┼───────────┼─────────────────────────────────────────────────────────────────────┤
-  │ 1      │ 1         │ count (0-8)                                                         │
-  ├────────┼───────────┼─────────────────────────────────────────────────────────────────────┤
-  │ 2+     │ count × 5 │ configs (each: speed, height, time_between_balls, spin, horizontal) │
-  └────────┴───────────┴─────────────────────────────────────────────────────────────────────┘
-  When reading, only the configs in use are sent (2 + count×5 bytes). When writing, the size must match exactly.
