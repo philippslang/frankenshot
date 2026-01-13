@@ -2,6 +2,7 @@
 #include "common.h"
 #include "heart_rate.h"
 #include "led.h"
+#include "esp_random.h"
 #include <string.h>
 /* Private function declarations */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
@@ -596,6 +597,18 @@ void send_frankenshot_feeding_indication(void) {
                            frankenshot_feeding_chr_val_handle);
         ESP_LOGI(TAG, "frankenshot feeding indication sent!");
     }
+}
+
+void update_frankenshot_config(void) {
+    frankenshot_config.speed = (uint8_t)(esp_random() % 11);
+    frankenshot_config.height = (uint8_t)(esp_random() % 11);
+    frankenshot_config.time_between_balls = (uint8_t)(esp_random() % 11);
+    frankenshot_config.spin = (uint8_t)(esp_random() % 11);
+    frankenshot_config.horizontal = (uint8_t)(esp_random() % 11);
+}
+
+void update_frankenshot_feeding(void) {
+    frankenshot_feeding = !frankenshot_feeding;
 }
 
 /*

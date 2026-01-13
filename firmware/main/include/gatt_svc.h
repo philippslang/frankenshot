@@ -33,6 +33,8 @@ typedef struct {
 void send_heart_rate_indication(void);
 void send_frankenshot_config_indication(void);
 void send_frankenshot_feeding_indication(void);
+void update_frankenshot_config(void);
+void update_frankenshot_feeding(void);
 void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
 void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 int gatt_svc_init(void);

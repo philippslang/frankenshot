@@ -52,7 +52,8 @@ static void indication_task(void *param) {
 
     while (1) {
         update_heart_rate();
-        // ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
+        update_frankenshot_config();
+        update_frankenshot_feeding();
 
         /* Send heart rate indication if enabled */
         send_heart_rate_indication();
@@ -60,8 +61,11 @@ static void indication_task(void *param) {
         /* Send frankenshot config indication if enabled */
         send_frankenshot_config_indication();
 
+        /* Send frankenshot feeding indication if enabled */
+        send_frankenshot_feeding_indication();
+
         /* Sleep */
-        vTaskDelay(HEART_RATE_TASK_PERIOD);
+        vTaskDelay(MOCK_RATE_TASK_PERIOD);
     }
 
     /* Clean up at exit */

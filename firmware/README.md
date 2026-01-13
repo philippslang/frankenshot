@@ -317,7 +317,7 @@ static void heart_rate_task(void *param) {
         send_heart_rate_indication();
 
         /* Sleep */
-        vTaskDelay(HEART_RATE_TASK_PERIOD);
+        vTaskDelay(MOCK_RATE_TASK_PERIOD);
     }
 
     /* Clean up at exit */

@@ -9,11 +9,10 @@ The esp board only has current state and makes it happen. The state is split int
 The current state is 
 - feeding, boolean, false is paused
 - next configuration number, number
-- manual feed, bool
 In terms of ble characterisitics, the program and current state are characteristics. Another characteristic is manual feed.
-- current config (read)
+- current config (inidcation, read)
 - program, multiple of five numbers to represent configs (read/write)
-- feeding (read/write)
+- feeding (indication, read/write)
 - manual feed, boolean command (write)
 On start-up some default state will be used, with feeding set to on. After ball fed the esp will start countdown of that config timer, move on to the next configuration in the list, get to this position, and after countdown expires move on again, or wrap back to the first one if last. On manual feed sets state to pause and triggers a ball feed, sets manual feed back to false.
 
@@ -23,16 +22,26 @@ The app will send state updates via ble, with each state field being a ble chara
 
 
 ### Characteristics info
- typedef struct {
+
+ Characteristic details:
+  - Properties: Read
+  - Descriptor: "Configuration"
+  - UUID: 01544f48-534e-454b-4e41-524601000000
+
+ Characteristic details:
+  - Properties: Write
+  - Descriptor: "Manual Feed"
+  - UUID: 01544f48-534e-454b-4e41-524603000000
+  
+  Characteristic details:
+  - Properties: Read/Write
+  - Descriptor: "Program"
+  
+  typedef struct {
       uint8_t id;
       uint8_t count;  /* number of configs in use (max 8) */
       frankenshot_config_t configs[8];
   } frankenshot_program_t;
-
-  Characteristic details:
-  - UUID: 00000004-4652-414e-4b45-4e53484f5401
-  - Properties: Read/Write
-  - Descriptor: "Program"
 
   Data format:
   ┌────────┬───────────┬─────────────────────────────────────────────────────────────────────┐

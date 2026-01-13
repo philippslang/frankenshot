@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Frankenshot is a Flutter mobile app for controlling a custom Spinshot tennis ball machine controller. The app is in early development (currently contains Flutter's default counter template).
+Frankenshot is a Flutter mobile app for controlling a custom Spinshot tennis ball machine controller.
 
 ## Development Commands
 

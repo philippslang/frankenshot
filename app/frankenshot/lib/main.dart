@@ -11,19 +11,24 @@ void main() {
 class BleService {
   static const String _deviceAddress = 'D0:CF:13:06:6B:36';
   static const String _serviceUuid = '01544f48-534e-454b-4e41-524600000000';
+  static const String _currentConfigCharUuid = '01544f48-534e-454b-4e41-524601000000';
   static const String _feedingCharUuid = '01544f48-534e-454b-4e41-524602000000';
   static const String _manualFeedCharUuid = '01544f48-534e-454b-4e41-524603000000';
 
   BluetoothDevice? _device;
+  BluetoothCharacteristic? _currentConfigCharacteristic;
   BluetoothCharacteristic? _feedingCharacteristic;
   BluetoothCharacteristic? _manualFeedCharacteristic;
+  StreamSubscription<List<int>>? _currentConfigSubscription;
   StreamSubscription<List<int>>? _feedingSubscription;
 
   final _connectionStateController = StreamController<bool>.broadcast();
   final _feedingStateController = StreamController<bool>.broadcast();
+  final _currentConfigController = StreamController<MachineConfig>.broadcast();
 
   Stream<bool> get connectionState => _connectionStateController.stream;
   Stream<bool> get feedingState => _feedingStateController.stream;
+  Stream<MachineConfig> get currentConfig => _currentConfigController.stream;
 
   bool _isConnected = false;
   bool get isConnected => _isConnected;
@@ -51,16 +56,47 @@ class BleService {
       if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
         for (final char in service.characteristics) {
           final uuid = char.uuid.toString().toLowerCase();
-          if (uuid == _feedingCharUuid.toLowerCase()) {
+          if (uuid == _currentConfigCharUuid.toLowerCase()) {
+            _currentConfigCharacteristic = char;
+          } else if (uuid == _feedingCharUuid.toLowerCase()) {
             _feedingCharacteristic = char;
           } else if (uuid == _manualFeedCharUuid.toLowerCase()) {
             _manualFeedCharacteristic = char;
           }
         }
+        await _setupCurrentConfigNotifications();
         await _setupFeedingNotifications();
         break;
       }
     }
+  }
+
+  Future<void> _setupCurrentConfigNotifications() async {
+    if (_currentConfigCharacteristic == null) return;
+
+    // Read initial value
+    final value = await _currentConfigCharacteristic!.read();
+    _parseAndBroadcastConfig(value);
+
+    // Subscribe to notifications
+    await _currentConfigCharacteristic!.setNotifyValue(true);
+    _currentConfigSubscription =
+        _currentConfigCharacteristic!.onValueReceived.listen(_parseAndBroadcastConfig);
+  }
+
+  void _parseAndBroadcastConfig(List<int> value) {
+    if (value.length < 5) return;
+
+    // Parse bytes: speed, height, time_between_balls, spin, horizontal
+    // spin and horizontal are 0-10 in payload, map to -5 to 5
+    final config = MachineConfig(
+      speed: value[0],
+      height: value[1],
+      timeBetweenBalls: value[2].toDouble(),
+      spin: value[3] - 5, // 0-10 → -5 to 5
+      horizontal: value[4] - 5, // 0-10 → -5 to 5
+    );
+    _currentConfigController.add(config);
   }
 
   Future<void> _setupFeedingNotifications() async {
@@ -92,6 +128,7 @@ class BleService {
   }
 
   Future<void> disconnect() async {
+    await _currentConfigSubscription?.cancel();
     await _feedingSubscription?.cancel();
     await _device?.disconnect();
     _isConnected = false;
@@ -99,9 +136,11 @@ class BleService {
   }
 
   void dispose() {
+    _currentConfigSubscription?.cancel();
     _feedingSubscription?.cancel();
     _connectionStateController.close();
     _feedingStateController.close();
+    _currentConfigController.close();
   }
 }
 
@@ -293,8 +332,10 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   final BleService _bleService = BleService();
   bool _isConnected = false;
   bool _isConnecting = false;
+  MachineConfig? _bleCurrentConfig;
   StreamSubscription<bool>? _connectionSubscription;
   StreamSubscription<bool>? _feedingSubscription;
+  StreamSubscription<MachineConfig>? _currentConfigSubscription;
 
   @override
   void initState() {
@@ -308,12 +349,21 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
       setState(() {
         _isConnected = connected;
         _isConnecting = false;
+        if (!connected) {
+          _bleCurrentConfig = null;
+        }
       });
     });
 
     _feedingSubscription = _bleService.feedingState.listen((feeding) {
       setState(() {
         _isFeeding = feeding;
+      });
+    });
+
+    _currentConfigSubscription = _bleService.currentConfig.listen((config) {
+      setState(() {
+        _bleCurrentConfig = config;
       });
     });
 
@@ -337,6 +387,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   void dispose() {
     _connectionSubscription?.cancel();
     _feedingSubscription?.cancel();
+    _currentConfigSubscription?.cancel();
     _bleService.dispose();
     super.dispose();
   }
@@ -354,6 +405,11 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   }
 
   MachineConfig? get _currentConfig {
+    // When connected, show the actual config from the device
+    if (_isConnected && _bleCurrentConfig != null) {
+      return _bleCurrentConfig;
+    }
+    // Otherwise show the selected config list's current config
     if (_selectedConfigList == null || _selectedConfigList!.configs.isEmpty) {
       return null;
     }
