@@ -12,9 +12,11 @@ class BleService {
   static const String _deviceAddress = 'D0:CF:13:06:6B:36';
   static const String _serviceUuid = '01544f48-534e-454b-4e41-524600000000';
   static const String _feedingCharUuid = '01544f48-534e-454b-4e41-524602000000';
+  static const String _manualFeedCharUuid = '01544f48-534e-454b-4e41-524603000000';
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _feedingCharacteristic;
+  BluetoothCharacteristic? _manualFeedCharacteristic;
   StreamSubscription<List<int>>? _feedingSubscription;
 
   final _connectionStateController = StreamController<bool>.broadcast();
@@ -48,12 +50,14 @@ class BleService {
     for (final service in services) {
       if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
         for (final char in service.characteristics) {
-          if (char.uuid.toString().toLowerCase() == _feedingCharUuid.toLowerCase()) {
+          final uuid = char.uuid.toString().toLowerCase();
+          if (uuid == _feedingCharUuid.toLowerCase()) {
             _feedingCharacteristic = char;
-            await _setupFeedingNotifications();
-            break;
+          } else if (uuid == _manualFeedCharUuid.toLowerCase()) {
+            _manualFeedCharacteristic = char;
           }
         }
+        await _setupFeedingNotifications();
         break;
       }
     }
@@ -80,6 +84,11 @@ class BleService {
   Future<void> setFeeding(bool feeding) async {
     if (_feedingCharacteristic == null) return;
     await _feedingCharacteristic!.write([feeding ? 1 : 0]);
+  }
+
+  Future<void> manualFeed() async {
+    if (_manualFeedCharacteristic == null) return;
+    await _manualFeedCharacteristic!.write([0]);
   }
 
   Future<void> disconnect() async {
@@ -357,7 +366,8 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   }
 
   void _manualFeed() {
-    // TODO: Send manual feed command to machine
+    if (!_isConnected) return;
+    _bleService.manualFeed();
   }
 
   void _selectConfigList(ConfigList configList) {
@@ -507,7 +517,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
               if (!_isFeeding) ...[
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: _selectedConfigList != null ? _manualFeed : null,
+                  onPressed: _manualFeed,
                   icon: const Icon(Icons.sports_tennis),
                   label: const Text('Manual Feed'),
                 ),
