@@ -4,7 +4,7 @@
 /* ESP APIs */
 #include "esp_random.h"
 
-#define MOCK_RATE_TASK_PERIOD (10000 / portTICK_PERIOD_MS)
+#define MOCK_RATE_TASK_PERIOD (25000 / portTICK_PERIOD_MS)
 
 uint8_t get_heart_rate(void);
 void update_heart_rate(void);

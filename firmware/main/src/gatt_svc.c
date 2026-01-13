@@ -431,6 +431,12 @@ static int frankenshot_program_chr_access(uint16_t conn_handle, uint16_t attr_ha
             memcpy(&frankenshot_program, ctxt->om->om_data, ctxt->om->om_len);
             ESP_LOGI(TAG, "frankenshot program updated: id=%d count=%d",
                      frankenshot_program.id, frankenshot_program.count);
+            for (int i = 0; i < frankenshot_program.count; i++) {
+                frankenshot_config_t *cfg = &frankenshot_program.configs[i];
+                ESP_LOGI(TAG, "  config[%d]: speed=%d height=%d time=%d spin=%d horizontal=%d",
+                         i, cfg->speed, cfg->height, cfg->time_between_balls,
+                         cfg->spin, cfg->horizontal);
+            }
             return rc;
         }
         goto error;
@@ -605,10 +611,15 @@ void update_frankenshot_config(void) {
     frankenshot_config.time_between_balls = (uint8_t)(esp_random() % 11);
     frankenshot_config.spin = (uint8_t)(esp_random() % 11);
     frankenshot_config.horizontal = (uint8_t)(esp_random() % 11);
+    ESP_LOGI(TAG, "config updated: speed=%d height=%d time=%d spin=%d horizontal=%d",
+             frankenshot_config.speed, frankenshot_config.height,
+             frankenshot_config.time_between_balls, frankenshot_config.spin,
+             frankenshot_config.horizontal);
 }
 
 void update_frankenshot_feeding(void) {
     frankenshot_feeding = !frankenshot_feeding;
+    ESP_LOGI(TAG, "feeding updated: %s", frankenshot_feeding ? "true" : "false");
 }
 
 /*
