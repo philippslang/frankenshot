@@ -249,6 +249,27 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     }
   }
 
+  void _editConfigList(ConfigList configList) async {
+    final result = await Navigator.push<ConfigList>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConfigListEditorScreen(existingConfig: configList),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        final index = _configLists.indexOf(configList);
+        if (index != -1) {
+          _configLists[index] = result;
+          if (_selectedConfigList?.name == configList.name) {
+            _selectedConfigList = result;
+          }
+        }
+      });
+      _saveConfigLists();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -377,6 +398,10 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
               onPressed: () => _selectConfigList(configList),
               child: const Text('Run'),
             ),
+          IconButton(
+            onPressed: () => _editConfigList(configList),
+            icon: const Icon(Icons.edit_outlined),
+          ),
           IconButton(
             onPressed: () => _deleteConfigList(configList),
             icon: const Icon(Icons.delete_outline),
@@ -507,7 +532,9 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
 }
 
 class ConfigListEditorScreen extends StatefulWidget {
-  const ConfigListEditorScreen({super.key});
+  final ConfigList? existingConfig;
+
+  const ConfigListEditorScreen({super.key, this.existingConfig});
 
   @override
   State<ConfigListEditorScreen> createState() => _ConfigListEditorScreenState();
@@ -516,6 +543,17 @@ class ConfigListEditorScreen extends StatefulWidget {
 class _ConfigListEditorScreenState extends State<ConfigListEditorScreen> {
   final _nameController = TextEditingController();
   final List<MachineConfig> _configs = [];
+
+  bool get _isEditing => widget.existingConfig != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingConfig != null) {
+      _nameController.text = widget.existingConfig!.name;
+      _configs.addAll(widget.existingConfig!.configs);
+    }
+  }
 
   @override
   void dispose() {
@@ -565,7 +603,7 @@ class _ConfigListEditorScreenState extends State<ConfigListEditorScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('New Plan'),
+        title: Text(_isEditing ? 'Edit Plan' : 'New Plan'),
         actions: [
           TextButton(
             onPressed: _save,
