@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const FrankenshotApp());
@@ -50,6 +52,22 @@ class MachineConfig {
       horizontal: horizontal ?? this.horizontal,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'timeBetweenBalls': timeBetweenBalls,
+        'speed': speed,
+        'spin': spin,
+        'height': height,
+        'horizontal': horizontal,
+      };
+
+  factory MachineConfig.fromJson(Map<String, dynamic> json) => MachineConfig(
+        timeBetweenBalls: (json['timeBetweenBalls'] as num).toDouble(),
+        speed: json['speed'] as int,
+        spin: json['spin'] as int,
+        height: json['height'] as int,
+        horizontal: json['horizontal'] as int,
+      );
 }
 
 class ConfigList {
@@ -70,6 +88,93 @@ class ConfigList {
       configs: configs ?? this.configs,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'configs': configs.map((c) => c.toJson()).toList(),
+      };
+
+  factory ConfigList.fromJson(Map<String, dynamic> json) => ConfigList(
+        name: json['name'] as String,
+        configs: (json['configs'] as List)
+            .map((c) => MachineConfig.fromJson(c as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class ConfigStorage {
+  static const _configListsKey = 'config_lists';
+
+  static Future<List<ConfigList>> loadConfigLists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_configListsKey);
+    if (jsonString == null) {
+      return _defaultConfigLists();
+    }
+    try {
+      final List<dynamic> jsonList = jsonDecode(jsonString);
+      return jsonList
+          .map((json) => ConfigList.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return _defaultConfigLists();
+    }
+  }
+
+  static Future<void> saveConfigLists(List<ConfigList> configLists) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(configLists.map((c) => c.toJson()).toList());
+    await prefs.setString(_configListsKey, jsonString);
+  }
+
+  static List<ConfigList> _defaultConfigLists() => [
+        const ConfigList(
+          name: 'Warm Up',
+          configs: [
+            MachineConfig(
+                timeBetweenBalls: 5.0,
+                speed: 3,
+                spin: 0,
+                height: 5,
+                horizontal: 0),
+            MachineConfig(
+                timeBetweenBalls: 4.0,
+                speed: 4,
+                spin: 0,
+                height: 5,
+                horizontal: 0),
+            MachineConfig(
+                timeBetweenBalls: 3.0,
+                speed: 5,
+                spin: 0,
+                height: 5,
+                horizontal: 0),
+          ],
+        ),
+        const ConfigList(
+          name: 'Topspin Practice',
+          configs: [
+            MachineConfig(
+                timeBetweenBalls: 3.0,
+                speed: 6,
+                spin: 3,
+                height: 6,
+                horizontal: 0),
+            MachineConfig(
+                timeBetweenBalls: 3.0,
+                speed: 6,
+                spin: 4,
+                height: 7,
+                horizontal: -2),
+            MachineConfig(
+                timeBetweenBalls: 3.0,
+                speed: 6,
+                spin: 4,
+                height: 7,
+                horizontal: 2),
+          ],
+        ),
+      ];
 }
 
 class MachineStatusScreen extends StatefulWidget {
@@ -83,25 +188,26 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   bool _isFeeding = false;
   int _currentConfigIndex = 0;
   ConfigList? _selectedConfigList;
+  List<ConfigList> _configLists = [];
+  bool _isLoading = true;
 
-  final List<ConfigList> _configLists = [
-    const ConfigList(
-      name: 'Warm Up',
-      configs: [
-        MachineConfig(timeBetweenBalls: 5.0, speed: 3, spin: 0, height: 5, horizontal: 0),
-        MachineConfig(timeBetweenBalls: 4.0, speed: 4, spin: 0, height: 5, horizontal: 0),
-        MachineConfig(timeBetweenBalls: 3.0, speed: 5, spin: 0, height: 5, horizontal: 0),
-      ],
-    ),
-    const ConfigList(
-      name: 'Topspin Practice',
-      configs: [
-        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 3, height: 6, horizontal: 0),
-        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 4, height: 7, horizontal: -2),
-        MachineConfig(timeBetweenBalls: 3.0, speed: 6, spin: 4, height: 7, horizontal: 2),
-      ],
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadConfigLists();
+  }
+
+  Future<void> _loadConfigLists() async {
+    final configs = await ConfigStorage.loadConfigLists();
+    setState(() {
+      _configLists = configs;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveConfigLists() async {
+    await ConfigStorage.saveConfigLists(_configLists);
+  }
 
   MachineConfig? get _currentConfig {
     if (_selectedConfigList == null || _selectedConfigList!.configs.isEmpty) {
@@ -139,6 +245,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
       setState(() {
         _configLists.add(result);
       });
+      _saveConfigLists();
     }
   }
 
@@ -149,19 +256,21 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Frankenshot'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildStatusCard(),
-            const SizedBox(height: 24),
-            _buildCurrentConfigCard(),
-            const SizedBox(height: 24),
-            _buildConfigListsCard(),
-          ],
-        ),
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildStatusCard(),
+                  const SizedBox(height: 24),
+                  _buildCurrentConfigCard(),
+                  const SizedBox(height: 24),
+                  _buildConfigListsCard(),
+                ],
+              ),
+            ),
     );
   }
 
@@ -277,13 +386,34 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     );
   }
 
-  void _deleteConfigList(ConfigList configList) {
-    setState(() {
-      _configLists.remove(configList);
-      if (_selectedConfigList?.name == configList.name) {
-        _selectedConfigList = null;
-      }
-    });
+  void _deleteConfigList(ConfigList configList) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Configuration'),
+        content: Text('Are you sure you want to delete "${configList.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      setState(() {
+        _configLists.remove(configList);
+        if (_selectedConfigList?.name == configList.name) {
+          _selectedConfigList = null;
+        }
+      });
+      _saveConfigLists();
+    }
   }
 
   Widget _buildCurrentConfigCard() {
