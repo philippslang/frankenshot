@@ -1,9 +1,99 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const FrankenshotApp());
+}
+
+class BleService {
+  static const String _deviceAddress = 'D0:CF:13:06:6B:36';
+  static const String _serviceUuid = '01544f48-534e-454b-4e41-524600000000';
+  static const String _feedingCharUuid = '01544f48-534e-454b-4e41-524602000000';
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _feedingCharacteristic;
+  StreamSubscription<List<int>>? _feedingSubscription;
+
+  final _connectionStateController = StreamController<bool>.broadcast();
+  final _feedingStateController = StreamController<bool>.broadcast();
+
+  Stream<bool> get connectionState => _connectionStateController.stream;
+  Stream<bool> get feedingState => _feedingStateController.stream;
+
+  bool _isConnected = false;
+  bool get isConnected => _isConnected;
+
+  Future<void> connect() async {
+    try {
+      _device = BluetoothDevice.fromId(_deviceAddress);
+      await _device!.connect(timeout: const Duration(seconds: 10));
+      _isConnected = true;
+      _connectionStateController.add(true);
+
+      await _discoverServices();
+    } catch (e) {
+      _isConnected = false;
+      _connectionStateController.add(false);
+      rethrow;
+    }
+  }
+
+  Future<void> _discoverServices() async {
+    if (_device == null) return;
+
+    final services = await _device!.discoverServices();
+    for (final service in services) {
+      if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
+        for (final char in service.characteristics) {
+          if (char.uuid.toString().toLowerCase() == _feedingCharUuid.toLowerCase()) {
+            _feedingCharacteristic = char;
+            await _setupFeedingNotifications();
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  Future<void> _setupFeedingNotifications() async {
+    if (_feedingCharacteristic == null) return;
+
+    // Read initial value
+    final value = await _feedingCharacteristic!.read();
+    if (value.isNotEmpty) {
+      _feedingStateController.add(value[0] == 1);
+    }
+
+    // Subscribe to notifications
+    await _feedingCharacteristic!.setNotifyValue(true);
+    _feedingSubscription = _feedingCharacteristic!.onValueReceived.listen((value) {
+      if (value.isNotEmpty) {
+        _feedingStateController.add(value[0] == 1);
+      }
+    });
+  }
+
+  Future<void> setFeeding(bool feeding) async {
+    if (_feedingCharacteristic == null) return;
+    await _feedingCharacteristic!.write([feeding ? 1 : 0]);
+  }
+
+  Future<void> disconnect() async {
+    await _feedingSubscription?.cancel();
+    await _device?.disconnect();
+    _isConnected = false;
+    _connectionStateController.add(false);
+  }
+
+  void dispose() {
+    _feedingSubscription?.cancel();
+    _connectionStateController.close();
+    _feedingStateController.close();
+  }
 }
 
 class FrankenshotApp extends StatelessWidget {
@@ -191,10 +281,55 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
   List<ConfigList> _configLists = [];
   bool _isLoading = true;
 
+  final BleService _bleService = BleService();
+  bool _isConnected = false;
+  bool _isConnecting = false;
+  StreamSubscription<bool>? _connectionSubscription;
+  StreamSubscription<bool>? _feedingSubscription;
+
   @override
   void initState() {
     super.initState();
     _loadConfigLists();
+    _setupBle();
+  }
+
+  void _setupBle() {
+    _connectionSubscription = _bleService.connectionState.listen((connected) {
+      setState(() {
+        _isConnected = connected;
+        _isConnecting = false;
+      });
+    });
+
+    _feedingSubscription = _bleService.feedingState.listen((feeding) {
+      setState(() {
+        _isFeeding = feeding;
+      });
+    });
+
+    _connect();
+  }
+
+  Future<void> _connect() async {
+    setState(() {
+      _isConnecting = true;
+    });
+    try {
+      await _bleService.connect();
+    } catch (e) {
+      setState(() {
+        _isConnecting = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    _feedingSubscription?.cancel();
+    _bleService.dispose();
+    super.dispose();
   }
 
   Future<void> _loadConfigLists() async {
@@ -216,10 +351,9 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     return _selectedConfigList!.configs[_currentConfigIndex % _selectedConfigList!.configs.length];
   }
 
-  void _toggleFeeding() {
-    setState(() {
-      _isFeeding = !_isFeeding;
-    });
+  void _toggleFeeding() async {
+    if (!_isConnected) return;
+    await _bleService.setFeeding(!_isFeeding);
   }
 
   void _manualFeed() {
@@ -230,7 +364,6 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     setState(() {
       _selectedConfigList = configList;
       _currentConfigIndex = 0;
-      _isFeeding = false;
     });
   }
 
@@ -276,6 +409,9 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Frankenshot'),
+        actions: [
+          _buildConnectionIndicator(),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -295,6 +431,27 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     );
   }
 
+  Widget _buildConnectionIndicator() {
+    if (_isConnecting) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16.0),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return IconButton(
+      onPressed: _isConnected ? null : _connect,
+      icon: Icon(
+        _isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+        color: _isConnected ? Colors.blue : Colors.grey,
+      ),
+      tooltip: _isConnected ? 'Connected' : 'Tap to connect',
+    );
+  }
+
   Widget _buildStatusCard() {
     return Card(
       child: Padding(
@@ -305,37 +462,56 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  _isFeeding ? Icons.play_circle : Icons.pause_circle,
+                  _isConnected
+                      ? (_isFeeding ? Icons.play_circle : Icons.pause_circle)
+                      : Icons.bluetooth_disabled,
                   size: 48,
-                  color: _isFeeding ? Colors.green : Colors.orange,
+                  color: _isConnected
+                      ? (_isFeeding ? Colors.green : Colors.orange)
+                      : Colors.grey,
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  _isFeeding ? 'Feeding' : 'Paused',
+                  _isConnected
+                      ? (_isFeeding ? 'Feeding' : 'Paused')
+                      : 'Disconnected',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: _isFeeding ? Colors.green : Colors.orange,
+                        color: _isConnected
+                            ? (_isFeeding ? Colors.green : Colors.orange)
+                            : Colors.grey,
                         fontWeight: FontWeight.bold,
                       ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _toggleFeeding,
-              icon: Icon(_isFeeding ? Icons.pause : Icons.play_arrow),
-              label: Text(_isFeeding ? 'Pause' : 'Resume'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _isFeeding ? Colors.orange : Colors.green,
-                minimumSize: const Size(200, 48),
+            if (!_isConnected)
+              FilledButton.icon(
+                onPressed: _isConnecting ? null : _connect,
+                icon: const Icon(Icons.bluetooth),
+                label: Text(_isConnecting ? 'Connecting...' : 'Connect'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(200, 48),
+                ),
+              )
+            else ...[
+              FilledButton.icon(
+                onPressed: _toggleFeeding,
+                icon: Icon(_isFeeding ? Icons.pause : Icons.play_arrow),
+                label: Text(_isFeeding ? 'Pause' : 'Resume'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _isFeeding ? Colors.orange : Colors.green,
+                  minimumSize: const Size(200, 48),
+                ),
               ),
-            ),
-            if (!_isFeeding) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _selectedConfigList != null ? _manualFeed : null,
-                icon: const Icon(Icons.sports_tennis),
-                label: const Text('Manual Feed'),
-              ),
+              if (!_isFeeding) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _selectedConfigList != null ? _manualFeed : null,
+                  icon: const Icon(Icons.sports_tennis),
+                  label: const Text('Manual Feed'),
+                ),
+              ],
             ],
           ],
         ),

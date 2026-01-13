@@ -91,6 +91,11 @@ static uint16_t frankenshot_config_chr_conn_handle = 0;
 static bool frankenshot_config_chr_conn_handle_inited = false;
 static bool frankenshot_config_ind_status = false;
 
+/* Frankenshot feeding indication tracking */
+static uint16_t frankenshot_feeding_chr_conn_handle = 0;
+static bool frankenshot_feeding_chr_conn_handle_inited = false;
+static bool frankenshot_feeding_ind_status = false;
+
 /* GATT services table */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     /* Heart rate service */
@@ -138,7 +143,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                                         /* Feeding characteristic */
                                         {.uuid = &frankenshot_feeding_chr_uuid.u,
                                          .access_cb = frankenshot_feeding_chr_access,
-                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_INDICATE,
                                          .val_handle = &frankenshot_feeding_chr_val_handle,
                                          .descriptors = (struct ble_gatt_dsc_def[]){
                                              {.uuid = BLE_UUID16_DECLARE(0x2901),
@@ -326,6 +331,7 @@ static int frankenshot_feeding_chr_access(uint16_t conn_handle, uint16_t attr_ha
                 frankenshot_feeding = ctxt->om->om_data[0] != 0;
                 ESP_LOGI(TAG, "frankenshot feeding updated: %s",
                          frankenshot_feeding ? "true" : "false");
+                send_frankenshot_feeding_indication();
             } else {
                 ESP_LOGE(TAG, "invalid feeding size: %d (expected 1)",
                          ctxt->om->om_len);
@@ -558,6 +564,14 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
         frankenshot_config_chr_conn_handle_inited = true;
         frankenshot_config_ind_status = event->subscribe.cur_indicate;
     }
+
+    /* Check for frankenshot feeding subscription */
+    if (event->subscribe.attr_handle == frankenshot_feeding_chr_val_handle) {
+        /* Update frankenshot feeding subscription status */
+        frankenshot_feeding_chr_conn_handle = event->subscribe.conn_handle;
+        frankenshot_feeding_chr_conn_handle_inited = true;
+        frankenshot_feeding_ind_status = event->subscribe.cur_indicate;
+    }
 }
 
 const frankenshot_config_t *get_frankenshot_config(void) {
@@ -573,6 +587,14 @@ void send_frankenshot_config_indication(void) {
         ble_gatts_indicate(frankenshot_config_chr_conn_handle,
                            frankenshot_config_chr_val_handle);
         ESP_LOGI(TAG, "frankenshot config indication sent!");
+    }
+}
+
+void send_frankenshot_feeding_indication(void) {
+    if (frankenshot_feeding_ind_status && frankenshot_feeding_chr_conn_handle_inited) {
+        ble_gatts_indicate(frankenshot_feeding_chr_conn_handle,
+                           frankenshot_feeding_chr_val_handle);
+        ESP_LOGI(TAG, "frankenshot feeding indication sent!");
     }
 }
 
