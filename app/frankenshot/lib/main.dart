@@ -298,49 +298,31 @@ class ConfigStorage {
 
   static List<ConfigList> _defaultConfigLists() => [
         const ConfigList(
-          name: 'Warm Up',
+          name: 'Easy DTL',
           configs: [
             MachineConfig(
                 timeBetweenBalls: 5,
                 speed: 3,
-                spin: 0,
-                height: 5,
-                horizontal: 0),
-            MachineConfig(
-                timeBetweenBalls: 4,
-                speed: 4,
-                spin: 0,
-                height: 5,
-                horizontal: 0),
-            MachineConfig(
-                timeBetweenBalls: 3,
-                speed: 5,
-                spin: 0,
+                spin: 2,
                 height: 5,
                 horizontal: 0),
           ],
         ),
         const ConfigList(
-          name: 'Topspin Practice',
+          name: 'Easy FH/BH',
           configs: [
             MachineConfig(
-                timeBetweenBalls: 3,
-                speed: 6,
-                spin: 3,
-                height: 6,
-                horizontal: 0),
+                timeBetweenBalls: 5,
+                speed: 3,
+                spin: 2,
+                height: 5,
+                horizontal: 3),
             MachineConfig(
-                timeBetweenBalls: 3,
-                speed: 6,
-                spin: 4,
-                height: 7,
-                horizontal: -2),
-            MachineConfig(
-                timeBetweenBalls: 3,
-                speed: 6,
-                spin: 4,
-                height: 7,
-                horizontal: 2),
+                timeBetweenBalls: 5,
+                speed: 3,
+                spin: 2,
+                height: 5,
+                horizontal: -3),
           ],
         ),
       ];
