@@ -333,13 +333,13 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Configuration Lists',
+                  'Configuration Plans',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 IconButton(
                   onPressed: _createNewConfigList,
                   icon: const Icon(Icons.add),
-                  tooltip: 'Create new list',
+                  tooltip: 'Create new',
                 ),
               ],
             ),
@@ -347,7 +347,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
             if (_configLists.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16.0),
-                child: Text('No configuration lists yet. Tap + to create one.'),
+                child: Text('No configurations yet. Tap + to create one.'),
               )
             else
               ..._configLists.map((configList) => _buildConfigListTile(configList)),
@@ -390,7 +390,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Configuration'),
+        title: const Text('Delete Plan'),
         content: Text('Are you sure you want to delete "${configList.name}"?'),
         actions: [
           TextButton(
@@ -444,7 +444,7 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
             _buildConfigRow(
               'Time Between Balls',
               config != null ? '${config.timeBetweenBalls} seconds' : '-',
-              range: '1-20',
+              range: '1-11',
             ),
             _buildConfigRow(
               'Speed',
@@ -565,7 +565,7 @@ class _ConfigListEditorScreenState extends State<ConfigListEditorScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('New Configuration List'),
+        title: const Text('New Plan'),
         actions: [
           TextButton(
             onPressed: _save,
@@ -606,7 +606,7 @@ class _ConfigListEditorScreenState extends State<ConfigListEditorScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(32.0),
                   child: Text(
-                    'No configurations yet.\nTap "Add" to create one.',
+                    'No plans yet.\nTap "Add" to create one.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -662,8 +662,8 @@ class _ConfigEditorDialogState extends State<ConfigEditorDialog> {
               label: 'Time Between Balls',
               value: _timeBetweenBalls,
               min: 1,
-              max: 20,
-              divisions: 19,
+              max: 11,
+              divisions: 10,
               onChanged: (v) => setState(() => _timeBetweenBalls = v),
               displayValue: '${_timeBetweenBalls.toStringAsFixed(1)}s',
             ),
