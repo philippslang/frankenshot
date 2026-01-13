@@ -14,11 +14,14 @@ class BleService {
   static const String _currentConfigCharUuid = '01544f48-534e-454b-4e41-524601000000';
   static const String _feedingCharUuid = '01544f48-534e-454b-4e41-524602000000';
   static const String _manualFeedCharUuid = '01544f48-534e-454b-4e41-524603000000';
+  static const String _programCharUuid = '01544f48-534e-454b-4e41-524604000000';
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _currentConfigCharacteristic;
   BluetoothCharacteristic? _feedingCharacteristic;
   BluetoothCharacteristic? _manualFeedCharacteristic;
+  BluetoothCharacteristic? _programCharacteristic;
+  int _programId = 0;
   StreamSubscription<List<int>>? _currentConfigSubscription;
   StreamSubscription<List<int>>? _feedingSubscription;
 
@@ -62,6 +65,8 @@ class BleService {
             _feedingCharacteristic = char;
           } else if (uuid == _manualFeedCharUuid.toLowerCase()) {
             _manualFeedCharacteristic = char;
+          } else if (uuid == _programCharUuid.toLowerCase()) {
+            _programCharacteristic = char;
           }
         }
         await _setupCurrentConfigNotifications();
@@ -92,7 +97,7 @@ class BleService {
     final config = MachineConfig(
       speed: value[0],
       height: value[1],
-      timeBetweenBalls: value[2].toDouble(),
+      timeBetweenBalls: value[2],
       spin: value[3] - 5, // 0-10 → -5 to 5
       horizontal: value[4] - 5, // 0-10 → -5 to 5
     );
@@ -125,6 +130,32 @@ class BleService {
   Future<void> manualFeed() async {
     if (_manualFeedCharacteristic == null) return;
     await _manualFeedCharacteristic!.write([0]);
+  }
+
+  Future<void> sendProgram(ConfigList configList) async {
+    if (_programCharacteristic == null) return;
+
+    // Limit to 8 configs max
+    final configs = configList.configs.take(8).toList();
+    final count = configs.length;
+
+    // Build payload: id (1 byte) + count (1 byte) + configs (5 bytes each)
+    final payload = <int>[
+      _programId++ & 0xFF, // id, wraps around at 255
+      count,
+    ];
+
+    for (final config in configs) {
+      payload.addAll([
+        config.speed,
+        config.height,
+        config.timeBetweenBalls,
+        config.spin + 5, // -5 to 5 → 0 to 10
+        config.horizontal + 5, // -5 to 5 → 0 to 10
+      ]);
+    }
+
+    await _programCharacteristic!.write(payload);
   }
 
   Future<void> disconnect() async {
@@ -161,7 +192,7 @@ class FrankenshotApp extends StatelessWidget {
 }
 
 class MachineConfig {
-  final double timeBetweenBalls;
+  final int timeBetweenBalls;
   final int speed;
   final int spin;
   final int height;
@@ -176,7 +207,7 @@ class MachineConfig {
   });
 
   MachineConfig copyWith({
-    double? timeBetweenBalls,
+    int? timeBetweenBalls,
     int? speed,
     int? spin,
     int? height,
@@ -200,7 +231,7 @@ class MachineConfig {
       };
 
   factory MachineConfig.fromJson(Map<String, dynamic> json) => MachineConfig(
-        timeBetweenBalls: (json['timeBetweenBalls'] as num).toDouble(),
+        timeBetweenBalls: (json['timeBetweenBalls'] as num).toInt(),
         speed: json['speed'] as int,
         spin: json['spin'] as int,
         height: json['height'] as int,
@@ -270,19 +301,19 @@ class ConfigStorage {
           name: 'Warm Up',
           configs: [
             MachineConfig(
-                timeBetweenBalls: 5.0,
+                timeBetweenBalls: 5,
                 speed: 3,
                 spin: 0,
                 height: 5,
                 horizontal: 0),
             MachineConfig(
-                timeBetweenBalls: 4.0,
+                timeBetweenBalls: 4,
                 speed: 4,
                 spin: 0,
                 height: 5,
                 horizontal: 0),
             MachineConfig(
-                timeBetweenBalls: 3.0,
+                timeBetweenBalls: 3,
                 speed: 5,
                 spin: 0,
                 height: 5,
@@ -293,19 +324,19 @@ class ConfigStorage {
           name: 'Topspin Practice',
           configs: [
             MachineConfig(
-                timeBetweenBalls: 3.0,
+                timeBetweenBalls: 3,
                 speed: 6,
                 spin: 3,
                 height: 6,
                 horizontal: 0),
             MachineConfig(
-                timeBetweenBalls: 3.0,
+                timeBetweenBalls: 3,
                 speed: 6,
                 spin: 4,
                 height: 7,
                 horizontal: -2),
             MachineConfig(
-                timeBetweenBalls: 3.0,
+                timeBetweenBalls: 3,
                 speed: 6,
                 spin: 4,
                 height: 7,
@@ -426,11 +457,15 @@ class _MachineStatusScreenState extends State<MachineStatusScreen> {
     _bleService.manualFeed();
   }
 
-  void _selectConfigList(ConfigList configList) {
+  void _selectConfigList(ConfigList configList) async {
     setState(() {
       _selectedConfigList = configList;
       _currentConfigIndex = 0;
     });
+
+    if (_isConnected) {
+      await _bleService.sendProgram(configList);
+    }
   }
 
   void _createNewConfigList() async {
@@ -924,7 +959,7 @@ class ConfigEditorDialog extends StatefulWidget {
 }
 
 class _ConfigEditorDialogState extends State<ConfigEditorDialog> {
-  double _timeBetweenBalls = 3.0;
+  int _timeBetweenBalls = 3;
   int _speed = 5;
   int _spin = 0;
   int _height = 5;
@@ -940,12 +975,12 @@ class _ConfigEditorDialogState extends State<ConfigEditorDialog> {
           children: [
             _buildSlider(
               label: 'Time Between Balls',
-              value: _timeBetweenBalls,
+              value: _timeBetweenBalls.toDouble(),
               min: 1,
               max: 11,
               divisions: 10,
-              onChanged: (v) => setState(() => _timeBetweenBalls = v),
-              displayValue: '${_timeBetweenBalls.toStringAsFixed(1)}s',
+              onChanged: (v) => setState(() => _timeBetweenBalls = v.round()),
+              displayValue: '${_timeBetweenBalls}s',
             ),
             _buildSlider(
               label: 'Speed',

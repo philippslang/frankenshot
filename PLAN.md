@@ -27,6 +27,14 @@ The app will send state updates via ble, with each state field being a ble chara
   - Properties: Read
   - Descriptor: "Configuration"
   - UUID: 01544f48-534e-454b-4e41-524601000000
+  
+  typedef struct {
+    uint8_t speed;
+    uint8_t height;
+    uint8_t time_between_balls;
+    uint8_t spin;
+    uint8_t horizontal;
+} frankenshot_config_t;
 
  Characteristic details:
   - Properties: Write
@@ -36,6 +44,7 @@ The app will send state updates via ble, with each state field being a ble chara
   Characteristic details:
   - Properties: Read/Write
   - Descriptor: "Program"
+  - UUID: 01544f48-534e-454b-4e41-524604000000
   
   typedef struct {
       uint8_t id;
