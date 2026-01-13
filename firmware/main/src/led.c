@@ -3,7 +3,7 @@
 #include "driver/gpio.h"
 #include "led_strip.h"
 
-#define BLINK_GPIO CONFIG_BLINK_GPIO
+#define BLINK_GPIO 38
 
 static uint8_t s_led_state = 0;
 
