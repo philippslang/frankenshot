@@ -80,3 +80,22 @@ A Flutter App to control a custom controller for a Spinshot tennis ball machnine
 The user should be able to create configuration plans. Each configuration plan can be saved under a name. Each plan has a list of items of the configuration set of speed, spin, height, horizontal, and time between balls. On the main page, the names of all configutaration plans are visible, and the user can select one to run. On the main page the users sees the feeding state, can pause it, and if paused can do a manual feed. Next the users sees the current configuration. Then they see all configuration lists, can create a new one and select an existing one to run. The user should be able to pause and resume at any time, no matter the plan selection.
 
 To install on phone, just do flutter run --release
+
+## board
+single driver: yellow to 1 boot side, green to 16 boot side, white to 17 
+
+## machine
+propulsion: two high velocity 12V DC motors, plus/minus thick wires, one direction, BTS7960
+
+feed: smaller 12V motor geared, plus/minus thinner wires, says sgmada dc geared motor, type TT-5412500-394M, DC 12V, no switches, one direction, BTS7960
+
+horizontal and elevation: 2GN 12.5K gear head, 12V, four thinner wires, both directions, Bipolar Stepper Motor with an integrated Planetary Gearbox (the "gear head").
+pairs are blue/red phase a and gree/black phase b, DRV8833 controller
+ 
+sensors: mechanical clicks, three wire limit switch, black blue red. our trigger logic is com+nc and com (to gnd) is black and nc (to gpio) is blue. this way
+if we check like this
+static inline bool feed_switch_triggered(void)
+{
+    return gpio_get_level(FEED_SWITCH_GPIO) == 1;
+}
+we get true if the switch is triggered AND if the wire is broken/disconnected and stop in either case, which is safe in our use case
