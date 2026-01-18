@@ -36,8 +36,7 @@ static const char *TAG = "firmware";
 
 /* ===== STEPPER CONFIG ===== */
 #define HORZ_DIR            0
-#define HORZ_MAX_STEPS           1200   // adjust after testing
-#define HORZ_STEP_DELAY_US       1000   // ping delay, smaller = faster, 1000 safe
+#define HORZ_STEP_DELAY_US     1000   // ping delay, smaller = faster, 1000 safe, limited by Hz
 
 /* ===== SWITCH CONFIG ===== */
 #define DEBOUNCE_COUNT    3
@@ -55,23 +54,29 @@ typedef enum {
 } feed_state_t;
 
 static uint8_t s_led_state = 0;
-
 static led_strip_handle_t led_strip;
 
+/* ===== HORZ ===== */
 typedef enum {
-    AXIS_UNHOMED,
-    AXIS_HOMING_SEEK,
-    AXIS_HOMING_BACKOFF,
-    AXIS_HOMING_APPROACH,
+    AXIS_CAL_SEEK_1,
+    AXIS_CAL_WAIT_RELEASE_1,
+    AXIS_CAL_SEEK_2,
+    AXIS_CAL_WAIT_RELEASE_2,
     AXIS_READY,
-    AXIS_MOVING,
-    AXIS_ERROR
-} axis_state_t;
+    AXIS_MOVING
+} horz_axis_state_t;
 
-static axis_state_t axis_state = AXIS_UNHOMED;
+static horz_axis_state_t horz_axis_state;
 
-static int32_t axis_pos_steps = 0;
-static int32_t axis_target_steps = 0;
+static int32_t horz_step_counter = 0;
+static int32_t horz_total_steps = 0;
+static int32_t horz_target_steps = 0;
+
+static inline bool timed_out(int64_t start_us, int timeout_ms)
+{
+    return (esp_timer_get_time() - start_us) >
+           ((int64_t)timeout_ms * 1000);
+}
 
 void led_on(void)
 {
@@ -80,7 +85,6 @@ void led_on(void)
     /* Refresh the strip to send data */
     led_strip_refresh(led_strip);
 }
-
 
 static void led_off(void)
 {
@@ -115,11 +119,6 @@ static void configure_led(void)
     led_strip_clear(led_strip);
 }
 
-static inline bool feed_test_requested(void)
-{
-    return gpio_get_level(MANUAL_TEST_GPIO) != 0; // active low
-}
-
 static bool debounce_switch(gpio_num_t gpio_num)
 {
     static bool last_raw = false;
@@ -146,37 +145,20 @@ static bool debounce_switch(gpio_num_t gpio_num)
     return stable;
 }
 
+static inline bool feed_test_requested(void)
+{
+    return gpio_get_level(MANUAL_TEST_GPIO) != 0; // active low
+}
+
 static bool feed_switch_pressed(void)
 {
     return debounce_switch(FEED_SWITCH_GPIO);
-}
-
-static bool horz_switch_pressed(void)
-{
-    return debounce_switch(HORZ_STEP_SWITCH_GPIO);
-}
-
-
-static inline bool timed_out(int64_t start_us, int timeout_ms)
-{
-    return (esp_timer_get_time() - start_us) >
-           ((int64_t)timeout_ms * 1000);
 }
 
 static void feed_switch_init(void)
 {
     gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << FEED_SWITCH_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-    };
-    gpio_config(&io_conf);
-}
-
-static void horz_switch_init(void)
-{
-    gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << HORZ_STEP_SWITCH_GPIO,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
     };
@@ -322,8 +304,33 @@ void feed_task(void *arg)
     }
 }
 
+static bool horz_switch_pressed(void)
+{
+    return debounce_switch(HORZ_STEP_SWITCH_GPIO);
+}
 
-static void horz_stepper_gpio_init(void)
+
+static void horz_switch_init(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << HORZ_STEP_SWITCH_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&io_conf);
+}
+
+static inline void horz_driver_enable(void)
+{
+    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 0); // active LOW
+}
+
+static inline void horz_driver_disable(void)
+{
+    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 1);
+}
+
+static void horz_stepper_init(void)
 {
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_OUTPUT,
@@ -334,11 +341,11 @@ static void horz_stepper_gpio_init(void)
     };
     gpio_config(&io_conf);
 
-    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 0);   // ENABLE driver (active LOW)
+    horz_driver_disable();
     gpio_set_level(HORZ_STEP_DIR_GPIO, HORZ_DIR);
 }
 
-static inline void horz_step_pulse(void)
+static void horz_step_pulse(void)
 {
     gpio_set_level(HORZ_STEP_STEP_GPIO, 1);
     esp_rom_delay_us(HORZ_STEP_DELAY_US); 
@@ -346,24 +353,84 @@ static inline void horz_step_pulse(void)
     esp_rom_delay_us(HORZ_STEP_DELAY_US);
 }
 
-static void horz_start_homing(void)
+void horz_move_to(int32_t pos)
 {
-    ESP_LOGI("AXIS", "Starting homing");
-    axis_state = AXIS_HOMING_SEEK;
+    if (horz_axis_state != AXIS_READY) return;
+
+    horz_driver_enable();
+    horz_target_steps = pos;
+    horz_axis_state = AXIS_MOVING;
 }
 
-
-void horz_stepper_test_task(void *arg)
+static void horz_home_task(void *arg)
 {
-    horz_stepper_gpio_init(); 
+    horz_stepper_init();
     horz_switch_init();
+    horz_driver_enable();
+    static const char *HTAG = "HORZ";
+    ESP_LOGI(HTAG, "Calibration starts");
+    horz_axis_state = AXIS_CAL_SEEK_1;
+
     while (1) {
-        horz_step_pulse();
         bool sw = horz_switch_pressed();
-        if (sw) {
-            ESP_LOGI("HSTEP", "Switch = true");
+
+        switch (horz_axis_state) {
+
+        case AXIS_CAL_SEEK_1:
+            horz_step_pulse();
+            if (sw) {
+                ESP_LOGI(HTAG, "First press");
+                horz_axis_state = AXIS_CAL_WAIT_RELEASE_1;
+            }
+            break;
+
+        case AXIS_CAL_WAIT_RELEASE_1:
+            horz_step_pulse();
+            if (!sw) {
+                ESP_LOGI(HTAG, "First release → zero");
+                horz_step_counter = 0;
+                horz_axis_state = AXIS_CAL_SEEK_2;
+            }
+            break;
+
+        case AXIS_CAL_SEEK_2:
+            horz_step_pulse();
+            horz_step_counter++;
+            if (sw) {
+                ESP_LOGI(HTAG, "Second press");
+                horz_axis_state = AXIS_CAL_WAIT_RELEASE_2;
+            }
+            break;
+
+        case AXIS_CAL_WAIT_RELEASE_2:
+            horz_step_pulse();
+            horz_step_counter++;
+            if (!sw) {
+                horz_total_steps = horz_step_counter;
+                ESP_LOGI(HTAG, "Calibration done, total steps = %ld", horz_total_steps);
+                horz_driver_disable();
+                horz_axis_state = AXIS_READY;
+            }
+            break;
+
+        case AXIS_MOVING:
+            horz_step_pulse();
+            horz_step_counter++;
+
+            if (horz_step_counter >= horz_total_steps)
+                horz_step_counter = 0;
+
+            if (horz_step_counter == horz_target_steps) {
+                ESP_LOGI(HTAG, "Target reached");
+                horz_driver_disable();
+                horz_axis_state = AXIS_READY;
+            }
+            break;
+
+        case AXIS_READY:
+            vTaskDelay(pdMS_TO_TICKS(100));
+            break;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -432,6 +499,30 @@ void app_main(void)
 #if MAIN == 4
 void app_main(void)
 {
-   xTaskCreate(horz_stepper_test_task, "Horz Stepper", 4*1024, NULL, 5, NULL);
+   xTaskCreate(horz_home_task, "Horz Homing", 4*1024, NULL, 5, NULL);
+   ESP_LOGI(TAG, "Horizontal homing done");
+   return;
+}
+#endif
+
+// Unidirectional control (propulsino and feed)
+#if MAIN == 5
+void app_main(void)
+{
+    horz_stepper_init();
+    horz_driver_enable();
+    int step_count = 0;
+    uint32_t sleep = pdMS_TO_TICKS(1);
+    ESP_LOGI(TAG, "Sleep is %d ticks", sleep);
+    while (step_count < 6000) {
+        ESP_LOGI(TAG, "Step %d", step_count);
+        gpio_set_level(HORZ_STEP_STEP_GPIO, 1);
+        esp_rom_delay_us(HORZ_STEP_DELAY_US); 
+        gpio_set_level(HORZ_STEP_STEP_GPIO, 0);
+        esp_rom_delay_us(HORZ_STEP_DELAY_US); 
+        step_count++;
+    }   
+    horz_driver_disable();    
+    ESP_LOGI(TAG, "Sleep was %d ticks", sleep);
 }
 #endif
