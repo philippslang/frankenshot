@@ -5,30 +5,46 @@
 #include "driver/ledc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_rom_sys.h"
 #include "led_strip.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "firmware";
 
 /* ===== GPIO CONFIG ===== */
-#define FEED_PWM_GPIO   6   // R_PWM
-#define FEED_EN_GPIO    7   // R_EN + L_EN tied together
-#define FEED_SWITCH_GPIO 16
-#define RGB_LED_GPIO 38
-#define FEED_TEST_GPIO 10
+#define RGB_LED_GPIO            38  // s3 on-board RGB LED
+#define RGB_LED_GPIO            8   // c6 on-board RGB LED
 
+#define FEED_PWM_GPIO           23   // R_PWM
+#define FEED_EN_GPIO            22   // R_EN + L_EN tied together
+#define FEED_SWITCH_GPIO        15   // NC switch input
+
+#define MANUAL_TEST_GPIO        10
+
+#define HORZ_STEP_ENABLE_GPIO   6
+#define HORZ_STEP_STEP_GPIO     4
+#define HORZ_STEP_DIR_GPIO      5
+#define HORZ_STEP_SWITCH_GPIO   7
+  
 /* ===== PWM CONFIG ===== */
-#define LEDC_TIMER       LEDC_TIMER_0
-#define LEDC_MODE        LEDC_LOW_SPEED_MODE
-#define LEDC_CHANNEL     LEDC_CHANNEL_0
-#define LEDC_DUTY_RES    LEDC_TIMER_8_BIT   // 0–255
-#define LEDC_FREQUENCY   20000               // 20 kHz
-#define ONED_TEST_LOAD   90 // ~40%
+#define FEED_LEDC_TIMER       LEDC_TIMER_0
+#define FEED_LEDC_MODE        LEDC_LOW_SPEED_MODE
+#define FEED_LEDC_CHANNEL     LEDC_CHANNEL_0
+#define FEED_LEDC_DUTY_RES    LEDC_TIMER_8_BIT      // 0–255
+#define FEED_LEDC_FREQUENCY   20000                 // 20 kHz
+#define FEED_PWM_LOAD         90                    // ~40%
 
-#define DEBOUNCE_COUNT 3
+/* ===== STEPPER CONFIG ===== */
+#define HORZ_DIR            0
+#define HORZ_MAX_STEPS           1200   // adjust after testing
+#define HORZ_STEP_DELAY_US       1000   // ping delay, smaller = faster, 1000 safe
 
-#define FEED_TIMEOUT_MS     10000   // jam detection
-#define FEED_POLL_MS        10
+/* ===== SWITCH CONFIG ===== */
+#define DEBOUNCE_COUNT    3
+#define FEED_TIMEOUT_MS   10000   // jam detection
+#define FEED_POLL_MS      10
+
+# define MAIN 4
 
 typedef enum {
     FEED_IDLE,
@@ -41,6 +57,21 @@ typedef enum {
 static uint8_t s_led_state = 0;
 
 static led_strip_handle_t led_strip;
+
+typedef enum {
+    AXIS_UNHOMED,
+    AXIS_HOMING_SEEK,
+    AXIS_HOMING_BACKOFF,
+    AXIS_HOMING_APPROACH,
+    AXIS_READY,
+    AXIS_MOVING,
+    AXIS_ERROR
+} axis_state_t;
+
+static axis_state_t axis_state = AXIS_UNHOMED;
+
+static int32_t axis_pos_steps = 0;
+static int32_t axis_target_steps = 0;
 
 void led_on(void)
 {
@@ -84,25 +115,20 @@ static void configure_led(void)
     led_strip_clear(led_strip);
 }
 
-// NC connected to gpio, will return true if switch is triggered and wire disconnected
-// which makes consumption for motor stop downstream safer
-static bool feed_switch_triggered(void)
-{
-    return gpio_get_level(FEED_SWITCH_GPIO) == 1;
-}
-
 static inline bool feed_test_requested(void)
 {
-    return gpio_get_level(FEED_TEST_GPIO) != 0; // active low
+    return gpio_get_level(MANUAL_TEST_GPIO) != 0; // active low
 }
 
-static bool debounce_feed_switch(void)
+static bool debounce_switch(gpio_num_t gpio_num)
 {
     static bool last_raw = false;
     static bool stable = false;
     static uint8_t count = 0;
 
-    bool raw = feed_switch_triggered();
+    // NC connected to gpio, will return true if switch is triggered and wire disconnected
+    // which makes consumption for motor stop downstream safer
+    bool raw = gpio_get_level(gpio_num) == 1;
 
     if (raw == last_raw) {
         if (count < DEBOUNCE_COUNT) {
@@ -120,12 +146,22 @@ static bool debounce_feed_switch(void)
     return stable;
 }
 
+static bool feed_switch_pressed(void)
+{
+    return debounce_switch(FEED_SWITCH_GPIO);
+}
+
+static bool horz_switch_pressed(void)
+{
+    return debounce_switch(HORZ_STEP_SWITCH_GPIO);
+}
+
+
 static inline bool timed_out(int64_t start_us, int timeout_ms)
 {
     return (esp_timer_get_time() - start_us) >
            ((int64_t)timeout_ms * 1000);
 }
-
 
 static void feed_switch_init(void)
 {
@@ -137,8 +173,17 @@ static void feed_switch_init(void)
     gpio_config(&io_conf);
 }
 
+static void horz_switch_init(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << HORZ_STEP_SWITCH_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&io_conf);
+}
 
-static void motor_pwm_init(void)
+static void feed_motor_pwm_init(void)
 {
     /* Enable pin */
     gpio_config_t en_cfg = {
@@ -153,10 +198,10 @@ static void motor_pwm_init(void)
 
     /* LEDC timer config */
     ledc_timer_config_t timer_cfg = {
-        .speed_mode       = LEDC_MODE,
-        .timer_num        = LEDC_TIMER,
-        .duty_resolution  = LEDC_DUTY_RES,
-        .freq_hz          = LEDC_FREQUENCY,
+        .speed_mode       = FEED_LEDC_MODE,
+        .timer_num        = FEED_LEDC_TIMER,
+        .duty_resolution  = FEED_LEDC_DUTY_RES,
+        .freq_hz          = FEED_LEDC_FREQUENCY,
         .clk_cfg          = LEDC_AUTO_CLK,
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
@@ -164,9 +209,9 @@ static void motor_pwm_init(void)
     /* LEDC channel config */
     ledc_channel_config_t channel_cfg = {
         .gpio_num   = FEED_PWM_GPIO,
-        .speed_mode = LEDC_MODE,
-        .channel    = LEDC_CHANNEL,
-        .timer_sel  = LEDC_TIMER,
+        .speed_mode = FEED_LEDC_MODE,
+        .channel    = FEED_LEDC_CHANNEL,
+        .timer_sel  = FEED_LEDC_TIMER,
         .duty       = 0,
         .hpoint     = 0,
     };
@@ -177,14 +222,14 @@ static void motor_pwm_init(void)
 
 static void feed_motor_start(void)
 {
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, ONED_TEST_LOAD); 
-    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+    ledc_set_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL, FEED_PWM_LOAD); 
+    ledc_update_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL);
 }
 
 static void feed_motor_stop(void)
 {
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0);
-    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+    ledc_set_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL, 0);
+    ledc_update_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL);
 }
 
 void feed_task(void *arg)
@@ -193,8 +238,11 @@ void feed_task(void *arg)
     feed_state_t last_state = -1;
     int64_t state_start_us = 0;
 
+    feed_switch_init();
+    feed_motor_pwm_init();
+
     while (1) {
-        bool sw = debounce_feed_switch();
+        bool sw = feed_switch_pressed();
 
         // State entry diagnostics
         if (state != last_state) {
@@ -274,8 +322,55 @@ void feed_task(void *arg)
     }
 }
 
+
+static void horz_stepper_gpio_init(void)
+{
+    gpio_config_t io_conf = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask =
+            (1ULL << HORZ_STEP_STEP_GPIO) |
+            (1ULL << HORZ_STEP_DIR_GPIO)  |
+            (1ULL << HORZ_STEP_ENABLE_GPIO),
+    };
+    gpio_config(&io_conf);
+
+    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 0);   // ENABLE driver (active LOW)
+    gpio_set_level(HORZ_STEP_DIR_GPIO, HORZ_DIR);
+}
+
+static inline void horz_step_pulse(void)
+{
+    gpio_set_level(HORZ_STEP_STEP_GPIO, 1);
+    esp_rom_delay_us(HORZ_STEP_DELAY_US); 
+    gpio_set_level(HORZ_STEP_STEP_GPIO, 0);
+    esp_rom_delay_us(HORZ_STEP_DELAY_US);
+}
+
+static void horz_start_homing(void)
+{
+    ESP_LOGI("AXIS", "Starting homing");
+    axis_state = AXIS_HOMING_SEEK;
+}
+
+
+void horz_stepper_test_task(void *arg)
+{
+    horz_stepper_gpio_init(); 
+    horz_switch_init();
+    while (1) {
+        horz_step_pulse();
+        bool sw = horz_switch_pressed();
+        if (sw) {
+            ESP_LOGI("HSTEP", "Switch = true");
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+
 // Led control
-void _0_app_main(void)
+#if MAIN == 0
+void app_main(void)
 {
     configure_led();
 
@@ -285,13 +380,14 @@ void _0_app_main(void)
         vTaskDelay(CONFIG_BLINK_PERIOD / portTICK_PERIOD_MS);
     }
 }
-
+#endif
 
 // Unidirectional control (propulsino and feed)
-void _1_app_main(void)
+#if MAIN == 1
+void app_main(void)
 {
     configure_led();
-    motor_pwm_init();
+    feed_motor_pwm_init();
 
     while (1) {
         led_on();
@@ -305,26 +401,37 @@ void _1_app_main(void)
         vTaskDelay(pdMS_TO_TICKS(4000));
     }
 }
+#endif
 
 // Switch sensor test
-void _2_app_main(void)
+#if MAIN == 2
+void app_main(void)
 {
-   feed_switch_init();
+   horz_switch_init();
 
    while (1) {
-        // ESP_LOGI(TAG, "feed switch = %s", feed_switch_triggered() ? "true" : "false");
-        ESP_LOGI(TAG, "test switch = %s", feed_test_requested() ? "true" : "false");
+        bool sw = horz_switch_pressed();
+        if (sw) {
+            ESP_LOGI(TAG, "Feed switch PRESSED");
+        }
+        // ESP_LOGI(TAG, "test switch = %s", feed_test_requested() ? "true" : "false");
         vTaskDelay(pdMS_TO_TICKS(10));
    }
 }
-
+#endif
 
 // feed test
+#if MAIN == 3
 void app_main(void)
 {
-   feed_switch_init();
-   motor_pwm_init();
-
-   xTaskCreate(feed_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
+   xTaskCreate(feed_task, "Feeder", 4*1024, NULL, 5, NULL);
    return;
 }
+#endif
+
+#if MAIN == 4
+void app_main(void)
+{
+   xTaskCreate(horz_stepper_test_task, "Horz Stepper", 4*1024, NULL, 5, NULL);
+}
+#endif

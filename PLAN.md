@@ -81,16 +81,17 @@ The user should be able to create configuration plans. Each configuration plan c
 
 To install on phone, just do flutter run --release
 
-## board
-single driver: yellow to 1 boot side, green to 16 boot side, white to 17 
-
 ## machine
 propulsion: two high velocity 12V DC motors, plus/minus thick wires, one direction, BTS7960
 
 feed: smaller 12V motor geared, plus/minus thinner wires, says sgmada dc geared motor, type TT-5412500-394M, DC 12V, no switches, one direction, BTS7960
 
-horizontal and elevation: 2GN 12.5K gear head, 12V, four thinner wires, both directions, Bipolar Stepper Motor with an integrated Planetary Gearbox (the "gear head").
+horizontal and elevation: 2GN 12.5K gear head, 12V, four thinner wires, Bipolar Stepper Motor with an integrated Planetary Gearbox (the "gear head").
 pairs are blue/red phase a and gree/black phase b, DRV8833 controller
+horizontal: one directions with crank and slider of sorts. needs manual precalculation how many steps to move from left to right, then move until switch and then
+move to center point using pre-calc. cyclic axis with a single index switch.
+elevation: motor in both directions, single switch to indicate stop (lowest angle). need to move until switch hit, and then use manual pre-calculation of
+how many steps to max, then divide by range to make move to elevation function
  
 sensors: mechanical clicks, three wire limit switch, black blue red. our trigger logic is com+nc and com (to gnd) is black and nc (to gpio) is blue. this way
 if we check like this
@@ -99,3 +100,6 @@ static inline bool feed_switch_triggered(void)
     return gpio_get_level(FEED_SWITCH_GPIO) == 1;
 }
 we get true if the switch is triggered AND if the wire is broken/disconnected and stop in either case, which is safe in our use case
+
+## order
+- female logic wires all colors

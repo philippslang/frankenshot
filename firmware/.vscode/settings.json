@@ -16,5 +16,5 @@
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\phili\\git\\frankenshot\\firmware\\build"
   ],
-  "idf.flashType": "UART"
+  "idf.flashType": "JTAG"
 }
