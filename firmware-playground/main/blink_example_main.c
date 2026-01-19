@@ -35,13 +35,14 @@ static const char *TAG = "firmware";
 #define FEED_PWM_LOAD         90                    // ~40%
 
 /* ===== STEPPER CONFIG ===== */
-#define HORZ_DIR            0
 #define HORZ_STEP_DELAY_US     1000   // ping delay, smaller = faster, 1000 safe, limited by Hz
 
 /* ===== SWITCH CONFIG ===== */
 #define DEBOUNCE_COUNT    3
 #define FEED_TIMEOUT_MS   10000   // jam detection
 #define FEED_POLL_MS      10
+
+static const char *HTAG = "HORZ";
 
 # define MAIN 4
 
@@ -69,8 +70,12 @@ typedef enum {
 static horz_axis_state_t horz_axis_state;
 
 static int32_t horz_step_counter = 0;
-static int32_t horz_total_steps = 0;
+static int32_t horz_tmp_step_counter = 0;
+// steps for full travel cycle
+// find with iterations of horz_init only
+static int32_t horz_total_steps = 2800; 
 static int32_t horz_target_steps = 0;
+static int32_t horz_dir = 0;
 
 static inline bool timed_out(int64_t start_us, int timeout_ms)
 {
@@ -309,7 +314,6 @@ static bool horz_switch_pressed(void)
     return debounce_switch(HORZ_STEP_SWITCH_GPIO);
 }
 
-
 static void horz_switch_init(void)
 {
     gpio_config_t io_conf = {
@@ -330,6 +334,27 @@ static inline void horz_driver_disable(void)
     gpio_set_level(HORZ_STEP_ENABLE_GPIO, 1);
 }
 
+static void horz_clockwise(void)
+{
+    horz_dir = 0;
+    gpio_set_level(HORZ_STEP_DIR_GPIO, horz_dir);
+}
+
+static void horz_counterclockwise(void)
+{
+    horz_dir = 1;
+    gpio_set_level(HORZ_STEP_DIR_GPIO, horz_dir);
+}
+
+static void horz_count_step(void)
+{
+    if (horz_dir == 0) {
+        horz_step_counter++;
+    } else {
+        horz_step_counter--;
+    }
+}
+
 static void horz_stepper_init(void)
 {
     gpio_config_t io_conf = {
@@ -342,7 +367,7 @@ static void horz_stepper_init(void)
     gpio_config(&io_conf);
 
     horz_driver_disable();
-    gpio_set_level(HORZ_STEP_DIR_GPIO, HORZ_DIR);
+    horz_clockwise();
 }
 
 static void horz_step_pulse(void)
@@ -355,20 +380,59 @@ static void horz_step_pulse(void)
 
 void horz_move_to(int32_t pos)
 {
-    if (horz_axis_state != AXIS_READY) return;
+    ESP_LOGI(HTAG, "Move to position %ld", pos);
+    if (pos > horz_total_steps || pos < 0) {
+        ESP_LOGI(HTAG, "Requested position %ld out of range (%ld)", pos, horz_total_steps);
+        return;
+    }
+    if (pos < horz_step_counter) {
+        horz_counterclockwise();
+    } else {
+        horz_clockwise();
+    }
+    if (horz_axis_state != AXIS_READY) 
+    {
+        ESP_LOGI(HTAG, "Axis not ready, cannot move");
+        return;
+    }
 
     horz_driver_enable();
     horz_target_steps = pos;
     horz_axis_state = AXIS_MOVING;
 }
 
-static void horz_home_task(void *arg)
+static void horz_moving(void) {
+    horz_step_pulse();
+    horz_count_step();
+
+    if (horz_step_counter >= horz_total_steps){
+        horz_step_counter = horz_total_steps;
+        horz_axis_state = AXIS_READY;
+        ESP_LOGI(HTAG, "Reached max limit");
+        horz_driver_disable();
+    }
+
+    if (horz_step_counter <= 0){
+        horz_step_counter = 0;
+        horz_axis_state = AXIS_READY;
+        ESP_LOGI(HTAG, "Reached min limit");
+        horz_driver_disable();
+    }
+
+    if (horz_step_counter == horz_target_steps) {
+        ESP_LOGI(HTAG, "Target reached");
+        horz_driver_disable();
+        horz_axis_state = AXIS_READY;
+    }
+}
+
+static void horz_init(void *arg)
 {
     horz_stepper_init();
     horz_switch_init();
     horz_driver_enable();
-    static const char *HTAG = "HORZ";
-    ESP_LOGI(HTAG, "Calibration starts");
+    ESP_LOGI(HTAG, "Horizontal startup");
+    ESP_LOGI(HTAG, "Finding home");
     horz_axis_state = AXIS_CAL_SEEK_1;
 
     while (1) {
@@ -389,47 +453,45 @@ static void horz_home_task(void *arg)
             if (!sw) {
                 ESP_LOGI(HTAG, "First release → zero");
                 horz_step_counter = 0;
-                horz_axis_state = AXIS_CAL_SEEK_2;
-            }
-            break;
-
-        case AXIS_CAL_SEEK_2:
-            horz_step_pulse();
-            horz_step_counter++;
-            if (sw) {
-                ESP_LOGI(HTAG, "Second press");
-                horz_axis_state = AXIS_CAL_WAIT_RELEASE_2;
-            }
-            break;
-
-        case AXIS_CAL_WAIT_RELEASE_2:
-            horz_step_pulse();
-            horz_step_counter++;
-            if (!sw) {
-                horz_total_steps = horz_step_counter;
-                ESP_LOGI(HTAG, "Calibration done, total steps = %ld", horz_total_steps);
-                horz_driver_disable();
                 horz_axis_state = AXIS_READY;
+                ESP_LOGI(HTAG, "Moving to center");
+                horz_move_to(horz_total_steps/2);
             }
             break;
-
+        
         case AXIS_MOVING:
-            horz_step_pulse();
-            horz_step_counter++;
+            horz_moving();
+            break;
+        
+        case AXIS_READY:
+            ESP_LOGI(HTAG, "Horizontal startup done");
+            return;
 
-            if (horz_step_counter >= horz_total_steps)
-                horz_step_counter = 0;
+        default:
+            ESP_LOGE(HTAG, "Unexpected state %d", horz_axis_state);
+        }
+    }
+}
 
-            if (horz_step_counter == horz_target_steps) {
-                ESP_LOGI(HTAG, "Target reached");
-                horz_driver_disable();
-                horz_axis_state = AXIS_READY;
-            }
+static void horz_task(void *arg)
+{
+    ESP_LOGI(HTAG, "Waiting for horizontal request");
+
+    while (1) {
+        bool sw = horz_switch_pressed();
+
+        switch (horz_axis_state) {
+        case AXIS_MOVING:
+            horz_moving();
             break;
 
         case AXIS_READY:
             vTaskDelay(pdMS_TO_TICKS(100));
             break;
+        
+        default:
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP_LOGI(HTAG, "Unexpected state %d", horz_axis_state);
         }
     }
 }
@@ -496,11 +558,15 @@ void app_main(void)
 }
 #endif
 
+// Find horizontal range
 #if MAIN == 4
 void app_main(void)
 {
-   xTaskCreate(horz_home_task, "Horz Homing", 4*1024, NULL, 5, NULL);
+   horz_init(NULL);
    ESP_LOGI(TAG, "Horizontal homing done");
+   xTaskCreate(horz_task, "Horz direction", 4*1024, NULL, 5, NULL);
+   horz_move_to(2200);
+   horz_move_to(600);
    return;
 }
 #endif
