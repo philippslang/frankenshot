@@ -29,8 +29,6 @@ static const char *FTAG = "FEED";
 #define HORZ_STEP_SWITCH_GPIO   2
 #define ELEV_STEP_SWITCH_GPIO   11
 
-#define MANUAL_TEST_GPIO        10
-
 #define HORZ_STEP_EN_GPIO       6
 #define HORZ_STEP_STEP_GPIO     4
 #define HORZ_STEP_DIR_GPIO      5
@@ -67,6 +65,7 @@ static const char *FTAG = "FEED";
 
 # define MAIN 5
 
+/* ===== FEED ===== */
 typedef enum {
     FEED_IDLE,
     FEED_CLEAR_SWITCH,
@@ -77,6 +76,7 @@ typedef enum {
 
 static uint8_t s_led_state = 0;
 static led_strip_handle_t led_strip;
+static bool s_feed_requested = false;
 
 /* ===== HORZ ===== */
 typedef enum {
@@ -91,8 +91,7 @@ typedef enum {
 static horz_axis_state_t horz_axis_state;
 
 static int32_t horz_step_counter = 0;
-// steps for full travel cycle
-// find with iterations of horz_init only
+// steps from one end to the other
 static int32_t horz_total_steps = 2800; 
 static int32_t horz_target_steps = 0;
 static int32_t horz_dir = 0;
@@ -107,8 +106,7 @@ typedef enum {
 static elev_axis_state_t elev_axis_state;
 
 static int32_t elev_step_counter = 0;
-// steps for full travel cycle
-// find with iterations of horz_init only
+// steps from one end to the other
 static int32_t elev_total_steps = 800; 
 static int32_t elev_target_steps = 0;
 static int32_t elev_dir = 0;
@@ -188,9 +186,19 @@ static bool debounce_switch(gpio_num_t gpio_num)
     return stable;
 }
 
-static inline bool feed_test_requested(void)
+void request_feed(void)
 {
-    return gpio_get_level(MANUAL_TEST_GPIO) != 0; // active low
+    s_feed_requested = true;
+}
+
+static bool feed_requested(void)
+{
+    return s_feed_requested;
+}
+
+static void feed_acknowledged()
+{
+    s_feed_requested = false;
 }
 
 static bool feed_switch_pressed(void)
@@ -328,7 +336,7 @@ static void feed_task(void *arg)
         switch (state) {
 
         case FEED_IDLE:
-            if (feed_test_requested()) {
+            if (feed_requested()) {
                 ESP_LOGI(FTAG, "Feed requested");
                 feed_motor_start();
                 state_start_us = esp_timer_get_time();
@@ -363,6 +371,7 @@ static void feed_task(void *arg)
             if (!sw) {
                 ESP_LOGI(FTAG, "Switch released");
                 feed_motor_stop();
+                feed_acknowledged();
                 state = FEED_IDLE;
             }
             break;
@@ -533,7 +542,7 @@ static void horz_step_pulse(void)
     esp_rom_delay_us(HORZ_STEP_DELAY_US);
 }
 
-static void horz_move_to(int32_t pos)
+static void horz_move_to_step(int32_t pos)
 {
     ESP_LOGI(HTAG, "Move to position %ld", pos);
     if (horz_axis_state != AXIS_READY) 
@@ -554,6 +563,25 @@ static void horz_move_to(int32_t pos)
     horz_driver_enable();
     horz_target_steps = pos;
     horz_axis_state = AXIS_MOVING;
+}
+
+static void horz_move_to_relative(uint32_t rel)
+{
+    if (rel > 10 || rel < 0) {
+        ESP_LOGE(TAG, "horz_move_to_relative: invalid value %lu", rel);
+        return;
+    }
+
+    int32_t range = horz_total_steps;
+
+    int32_t target_step = ((int32_t)rel * range) / 10;
+
+    ESP_LOGI(TAG,
+        "Horz move: rel=%lu -> step=%ld",
+        rel, target_step
+    );
+
+    horz_move_to_step(target_step);
 }
 
 static void horz_moving(void) {
@@ -603,6 +631,8 @@ void horz_home(void *arg)
             }
             break;
 
+        // we have to wait for the release to not only home position
+        // but also know relative direction
         case AXIS_CAL_WAIT_RELEASE_1:
             horz_step_pulse();
             if (!sw) {
@@ -610,7 +640,7 @@ void horz_home(void *arg)
                 horz_step_counter = 0;
                 horz_axis_state = AXIS_READY;
                 ESP_LOGI(HTAG, "Moving to center");
-                horz_move_to(horz_total_steps/2);
+                horz_move_to_step(horz_total_steps/2);
             }
             break;
         
@@ -744,7 +774,7 @@ void elev_stepper_home(void *arg)
     }
 }
 
-static void elev_move_to(int32_t pos)
+static void elev_move_to_step(int32_t pos)
 {
     ESP_LOGI(ETAG, "Move to position %ld", pos);
     if (elev_axis_state != ELEV_READY) 
@@ -765,6 +795,25 @@ static void elev_move_to(int32_t pos)
     elev_driver_enable();
     elev_target_steps = pos;
     elev_axis_state = ELEV_MOVING;
+}
+
+static void elev_move_to_relative(uint32_t rel)
+{
+    if (rel > 10 || rel < 0) {
+        ESP_LOGE(TAG, "elev_move_to_relative: invalid value %lu", rel);
+        return;
+    }
+
+    int32_t range = elev_total_steps;
+
+    int32_t target_step = ((int32_t)rel * range) / 10;
+
+    ESP_LOGI(TAG,
+        "Elev move: rel=%lu -> step=%ld",
+        rel, target_step
+    );
+
+    elev_move_to_step(target_step);
 }
 
 
@@ -867,7 +916,6 @@ void app_main(void)
         if (sw) {
             ESP_LOGI(TAG, "Feed switch PRESSED");
         }
-        // ESP_LOGI(TAG, "test switch = %s", feed_test_requested() ? "true" : "false");
         vTaskDelay(pdMS_TO_TICKS(10));
    }
 }
@@ -898,12 +946,14 @@ void app_main(void)
     xTaskCreate(elev_task, "Elevation", 4*1024, NULL, 5, NULL);
     xTaskCreate(horz_task, "Horizontal", 4*1024, NULL, 5, NULL);
 
-    vTaskDelay(pdMS_TO_TICKS(10));
-    horz_move_to(200); // TODO relative
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    horz_move_to_relative(7);
     vTaskDelay(pdMS_TO_TICKS(10));
     elev_motors_start(5, 5);
     vTaskDelay(pdMS_TO_TICKS(10000));
-    elev_move_to(600); // TODO relative
+    elev_move_to_relative(5);
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    request_feed();
     vTaskDelay(pdMS_TO_TICKS(10000));
     elev_motors_stop();
    return;
