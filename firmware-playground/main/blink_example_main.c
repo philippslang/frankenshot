@@ -144,7 +144,7 @@ static void blink_led(void)
     s_led_state = !s_led_state;
 }
 
-void configure_led(void)
+void led_init(void)
 {
     /* LED strip initialization with the GPIO and pixels number*/
     led_strip_config_t strip_config = {
@@ -295,7 +295,7 @@ static void feed_motor_stop(void)
     pwm_stop(FEED_LEDC_CHANNEL);
 }
 
-static void feed_task(void *arg)
+void feed_task(void *arg)
 {
     feed_state_t state = FEED_IDLE;
     feed_state_t last_state = -1;
@@ -428,6 +428,7 @@ void elev_motors_stop(void)
     elev_top_motor_stop();
     elev_bottom_motor_stop();
 }
+
 void elev_motors_start(uint32_t speed, uint32_t spin)
 {
     if (spin < 0 || spin > 10) {
@@ -465,7 +466,6 @@ void elev_motors_start(uint32_t speed, uint32_t spin)
     elev_top_motor_start((uint32_t)top_duty);
     elev_bottom_motor_start((uint32_t)bottom_duty);
 }
-
 
 static bool horz_switch_pressed(void)
 {
@@ -565,7 +565,7 @@ static void horz_move_to_step(int32_t pos)
     horz_axis_state = AXIS_MOVING;
 }
 
-static void horz_move_to_relative(uint32_t rel)
+void horz_move_to_relative(uint32_t rel)
 {
     if (rel > 10 || rel < 0) {
         ESP_LOGE(TAG, "horz_move_to_relative: invalid value %lu", rel);
@@ -797,7 +797,7 @@ static void elev_move_to_step(int32_t pos)
     elev_axis_state = ELEV_MOVING;
 }
 
-static void elev_move_to_relative(uint32_t rel)
+void elev_move_to_relative(uint32_t rel)
 {
     if (rel > 10 || rel < 0) {
         ESP_LOGE(TAG, "elev_move_to_relative: invalid value %lu", rel);
@@ -874,7 +874,7 @@ void elev_task(void *arg)
 #if MAIN == 0
 void app_main(void)
 {
-    configure_led();
+    led_init();
 
     while (1) {
         ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
