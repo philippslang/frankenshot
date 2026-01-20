@@ -17,22 +17,37 @@ static const char *TAG = "firmware";
 
 #define FEED_PWM_GPIO           23   // R_PWM
 #define FEED_EN_GPIO            22   // R_EN + L_EN tied together
-#define FEED_SWITCH_GPIO        15   // NC switch input
+#define ELEV_BOTTOM_PWM_GPIO    21
+#define ELEV_BOTTOM_EN_GPIO     20
+#define ELEV_TOP_PWM_GPIO       19
+#define ELEV_TOP_EN_GPIO        18
+
+#define FEED_SWITCH_GPIO        3    // NC switch input
+#define HORZ_STEP_SWITCH_GPIO   2
+#define ELEV_STEP_SWITCH_GPIO   11
 
 #define MANUAL_TEST_GPIO        10
 
-#define HORZ_STEP_ENABLE_GPIO   6
+#define HORZ_STEP_EN_GPIO       6
 #define HORZ_STEP_STEP_GPIO     4
 #define HORZ_STEP_DIR_GPIO      5
-#define HORZ_STEP_SWITCH_GPIO   7
+
   
 /* ===== PWM CONFIG ===== */
-#define FEED_LEDC_TIMER       LEDC_TIMER_0
-#define FEED_LEDC_MODE        LEDC_LOW_SPEED_MODE
-#define FEED_LEDC_CHANNEL     LEDC_CHANNEL_0
-#define FEED_LEDC_DUTY_RES    LEDC_TIMER_8_BIT      // 0–255
-#define FEED_LEDC_FREQUENCY   20000                 // 20 kHz
+#define PWM_LEDC_TIMER       LEDC_TIMER_0
+#define PWM_LEDC_MODE        LEDC_LOW_SPEED_MODE
+#define PWM_LEDC_DUTY_RES    LEDC_TIMER_8_BIT      // 0–255
+#define PWM_LEDC_FREQUENCY   20000                 // 20 kHz
+
 #define FEED_PWM_LOAD         90                    // ~40%
+#define ELEV_PWM_LOAD         100   
+
+#define FEED_LEDC_CHANNEL          LEDC_CHANNEL_0
+#define ELEV_BOTTOM_LEDC_CHANNEL   LEDC_CHANNEL_1
+#define ELEV_TOP_LEDC_CHANNEL      LEDC_CHANNEL_2
+
+#define ELEV_MOTOR_MAX_DUTY   200   // max 255 for 8-bit resolution
+#define ELEV_SPIN_DIVISOR     25   // higher = weaker effect
 
 /* ===== STEPPER CONFIG ===== */
 #define HORZ_STEP_DELAY_US     1000   // ping delay, smaller = faster, 1000 safe, limited by Hz
@@ -44,7 +59,7 @@ static const char *TAG = "firmware";
 
 static const char *HTAG = "HORZ";
 
-# define MAIN 4
+# define MAIN 1
 
 typedef enum {
     FEED_IDLE,
@@ -160,63 +175,93 @@ static bool feed_switch_pressed(void)
     return debounce_switch(FEED_SWITCH_GPIO);
 }
 
-static void feed_switch_init(void)
+
+static void limit_switch_init(uint32_t gpio_num)
 {
     gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << FEED_SWITCH_GPIO,
+        .pin_bit_mask = 1ULL << gpio_num,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
     };
     gpio_config(&io_conf);
 }
 
-static void feed_motor_pwm_init(void)
+static void feed_switch_init(void)
+{
+    limit_switch_init(FEED_SWITCH_GPIO);
+}
+
+static void pwm_init(gpio_num_t en_gpio, gpio_num_t pwm_gpio, gpio_num_t channel)
 {
     /* Enable pin */
     gpio_config_t en_cfg = {
-        .pin_bit_mask = 1ULL << FEED_EN_GPIO,
+        .pin_bit_mask = 1ULL << en_gpio,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&en_cfg);
-    gpio_set_level(FEED_EN_GPIO, 1); // Enable BTS7960
+    gpio_set_level(en_gpio, 1); // Enable BTS7960
 
     /* LEDC timer config */
     ledc_timer_config_t timer_cfg = {
-        .speed_mode       = FEED_LEDC_MODE,
-        .timer_num        = FEED_LEDC_TIMER,
-        .duty_resolution  = FEED_LEDC_DUTY_RES,
-        .freq_hz          = FEED_LEDC_FREQUENCY,
+        .speed_mode       = PWM_LEDC_MODE,
+        .timer_num        = PWM_LEDC_TIMER,
+        .duty_resolution  = PWM_LEDC_DUTY_RES,
+        .freq_hz          = PWM_LEDC_FREQUENCY,
         .clk_cfg          = LEDC_AUTO_CLK,
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
 
     /* LEDC channel config */
     ledc_channel_config_t channel_cfg = {
-        .gpio_num   = FEED_PWM_GPIO,
-        .speed_mode = FEED_LEDC_MODE,
-        .channel    = FEED_LEDC_CHANNEL,
-        .timer_sel  = FEED_LEDC_TIMER,
+        .gpio_num   = pwm_gpio,
+        .speed_mode = PWM_LEDC_MODE,
+        .channel    = channel,
+        .timer_sel  = PWM_LEDC_MODE,
         .duty       = 0,
         .hpoint     = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&channel_cfg));
 
-    ESP_LOGI(TAG, "Motor PWM initialized");
+    ESP_LOGI(TAG, "PWM initialized");
+}
+
+static void pwm_start(gpio_num_t channel, uint32_t duty)
+{
+    esp_err_t ret;
+    ret = ledc_set_duty(PWM_LEDC_MODE, channel, duty);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "pwm_start ledc_set_duty failed: %s", esp_err_to_name(ret));
+    }
+    ret = ledc_update_duty(PWM_LEDC_MODE, channel);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "pwm_start ledc_update_duty failed: %s", esp_err_to_name(ret));
+    }
+    ESP_LOGI(TAG, "pwm_start: duty=%d on channel %d", duty, channel);
+}
+
+static void pwm_stop(gpio_num_t channel)
+{
+    ledc_set_duty(PWM_LEDC_MODE, channel, 0);
+    ledc_update_duty(PWM_LEDC_MODE, channel);
+}
+
+
+static void feed_motor_pwm_init(void)
+{
+    pwm_init(FEED_EN_GPIO, FEED_PWM_GPIO, FEED_LEDC_CHANNEL);
 }
 
 static void feed_motor_start(void)
 {
-    ledc_set_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL, FEED_PWM_LOAD); 
-    ledc_update_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL);
+    pwm_start(FEED_LEDC_CHANNEL, FEED_PWM_LOAD);
 }
 
 static void feed_motor_stop(void)
 {
-    ledc_set_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL, 0);
-    ledc_update_duty(FEED_LEDC_MODE, FEED_LEDC_CHANNEL);
+    pwm_stop(FEED_LEDC_CHANNEL);
 }
 
 void feed_task(void *arg)
@@ -309,6 +354,91 @@ void feed_task(void *arg)
     }
 }
 
+
+static void elev_bottom_motor_pwm_init(void)
+{
+    pwm_init(ELEV_BOTTOM_EN_GPIO, ELEV_BOTTOM_PWM_GPIO, ELEV_BOTTOM_LEDC_CHANNEL);
+}
+
+static void elev_bottom_motor_start(uint32_t duty)
+{
+    pwm_start(ELEV_BOTTOM_LEDC_CHANNEL, duty);
+}
+
+static void elev_bottom_motor_stop(void)
+{
+    pwm_stop(ELEV_BOTTOM_LEDC_CHANNEL);
+}
+
+static void elev_top_motor_pwm_init(void)
+{
+    pwm_init(ELEV_TOP_EN_GPIO, ELEV_TOP_PWM_GPIO, ELEV_TOP_LEDC_CHANNEL);
+}   
+
+static void elev_top_motor_start(uint32_t duty)
+{
+    pwm_start(ELEV_TOP_LEDC_CHANNEL, duty);
+}
+
+static void elev_top_motor_stop(void)
+{
+    pwm_stop(ELEV_TOP_LEDC_CHANNEL);
+}
+
+// api
+static void elev_motors_init(void)
+{
+    elev_top_motor_pwm_init();
+    elev_bottom_motor_pwm_init();
+}
+
+// api
+static void elev_motors_stop(void)
+{
+    elev_top_motor_stop();
+    elev_bottom_motor_stop();
+}
+
+// api
+static void elev_motors_start(uint32_t speed, uint32_t spin)
+{
+    if (spin < 0 || spin > 10) {
+        ESP_LOGE(TAG, "elev_motors_start: invalid spin %d", spin);
+        return;
+    }
+    if (speed < 1 || speed > 10) {
+        ESP_LOGE(TAG, "elev_motors_start: invalid speed %d", speed);
+        return;
+    }
+
+    
+    int32_t base = (speed * ELEV_MOTOR_MAX_DUTY) / 10;
+
+    /* Centered spin: -5 … +5 */
+    int32_t spin_offset = (int32_t)spin - 5;
+
+    int32_t delta = (base * spin_offset) / ELEV_SPIN_DIVISOR;
+
+    int32_t top_duty    = base + delta;
+    int32_t bottom_duty = base - delta;
+
+    /* Clamp */
+    if (top_duty > ELEV_MOTOR_MAX_DUTY) top_duty = ELEV_MOTOR_MAX_DUTY;
+    if (top_duty < 0) top_duty = 0;
+
+    if (bottom_duty > ELEV_MOTOR_MAX_DUTY) bottom_duty = ELEV_MOTOR_MAX_DUTY;
+    if (bottom_duty < 0) bottom_duty = 0;
+
+    ESP_LOGI(TAG,
+        "Elev motors: speed=%lu spin=%lu base=%ld offset=%ld top=%ld bottom=%ld",
+        speed, spin, base, spin_offset, top_duty, bottom_duty
+    );
+
+    elev_top_motor_start((uint32_t)top_duty);
+    elev_bottom_motor_start((uint32_t)bottom_duty);
+}
+
+
 static bool horz_switch_pressed(void)
 {
     return debounce_switch(HORZ_STEP_SWITCH_GPIO);
@@ -316,22 +446,17 @@ static bool horz_switch_pressed(void)
 
 static void horz_switch_init(void)
 {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << HORZ_STEP_SWITCH_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-    };
-    gpio_config(&io_conf);
+    limit_switch_init(HORZ_STEP_SWITCH_GPIO);
 }
 
 static inline void horz_driver_enable(void)
 {
-    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 0); // active LOW
+    gpio_set_level(HORZ_STEP_EN_GPIO, 0); // active LOW
 }
 
 static inline void horz_driver_disable(void)
 {
-    gpio_set_level(HORZ_STEP_ENABLE_GPIO, 1);
+    gpio_set_level(HORZ_STEP_EN_GPIO, 1);
 }
 
 static void horz_clockwise(void)
@@ -362,7 +487,7 @@ static void horz_stepper_init(void)
         .pin_bit_mask =
             (1ULL << HORZ_STEP_STEP_GPIO) |
             (1ULL << HORZ_STEP_DIR_GPIO)  |
-            (1ULL << HORZ_STEP_ENABLE_GPIO),
+            (1ULL << HORZ_STEP_EN_GPIO),
     };
     gpio_config(&io_conf);
 
@@ -381,6 +506,11 @@ static void horz_step_pulse(void)
 void horz_move_to(int32_t pos)
 {
     ESP_LOGI(HTAG, "Move to position %ld", pos);
+    if (horz_axis_state != AXIS_READY) 
+    {
+        ESP_LOGI(HTAG, "Axis not ready, cannot move");
+        return;
+    }
     if (pos > horz_total_steps || pos < 0) {
         ESP_LOGI(HTAG, "Requested position %ld out of range (%ld)", pos, horz_total_steps);
         return;
@@ -389,11 +519,6 @@ void horz_move_to(int32_t pos)
         horz_counterclockwise();
     } else {
         horz_clockwise();
-    }
-    if (horz_axis_state != AXIS_READY) 
-    {
-        ESP_LOGI(HTAG, "Axis not ready, cannot move");
-        return;
     }
 
     horz_driver_enable();
@@ -515,18 +640,18 @@ void app_main(void)
 #if MAIN == 1
 void app_main(void)
 {
-    configure_led();
-    feed_motor_pwm_init();
+    elev_motors_init();
+    // feed_motor_pwm_init();
 
     while (1) {
-        led_on();
         ESP_LOGI(TAG, "Motor ON");
-        feed_motor_start();
+        elev_motors_start(5, 7);
+        // feed_motor_start();
         vTaskDelay(pdMS_TO_TICKS(8000));
 
-        led_off();
         ESP_LOGI(TAG, "Motor OFF");
-        feed_motor_stop();
+        elev_motors_stop();
+        // feed_motor_stop();
         vTaskDelay(pdMS_TO_TICKS(4000));
     }
 }
@@ -563,32 +688,12 @@ void app_main(void)
 void app_main(void)
 {
    horz_init(NULL);
+   vTaskDelay(pdMS_TO_TICKS(10));
    ESP_LOGI(TAG, "Horizontal homing done");
    xTaskCreate(horz_task, "Horz direction", 4*1024, NULL, 5, NULL);
-   horz_move_to(2200);
+//    horz_move_to(2200);
    horz_move_to(600);
    return;
 }
 #endif
 
-// Unidirectional control (propulsino and feed)
-#if MAIN == 5
-void app_main(void)
-{
-    horz_stepper_init();
-    horz_driver_enable();
-    int step_count = 0;
-    uint32_t sleep = pdMS_TO_TICKS(1);
-    ESP_LOGI(TAG, "Sleep is %d ticks", sleep);
-    while (step_count < 6000) {
-        ESP_LOGI(TAG, "Step %d", step_count);
-        gpio_set_level(HORZ_STEP_STEP_GPIO, 1);
-        esp_rom_delay_us(HORZ_STEP_DELAY_US); 
-        gpio_set_level(HORZ_STEP_STEP_GPIO, 0);
-        esp_rom_delay_us(HORZ_STEP_DELAY_US); 
-        step_count++;
-    }   
-    horz_driver_disable();    
-    ESP_LOGI(TAG, "Sleep was %d ticks", sleep);
-}
-#endif
