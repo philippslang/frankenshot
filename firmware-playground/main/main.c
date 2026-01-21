@@ -7,7 +7,6 @@
 
 void app_main(void)
 {
-    // these and only these is api
     elev_motors_init();
     vTaskDelay(pdMS_TO_TICKS(10));
     horz_home();
