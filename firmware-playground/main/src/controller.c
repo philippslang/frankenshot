@@ -63,7 +63,7 @@ static const char *FTAG = "FEED";
 #define FEED_POLL_MS      10
 
 
-# define MAIN 5
+# define MAIN 9999
 
 /* ===== FEED ===== */
 typedef enum {
@@ -609,7 +609,7 @@ static void horz_moving(void) {
     }
 }
 
-void horz_home(void *arg)
+void horz_home(void)
 {
     horz_stepper_init();
     horz_switch_init();
@@ -744,7 +744,7 @@ static void elev_step_pulse(void)
     esp_rom_delay_us(ELEV_STEP_DELAY_US);
 }
 
-void elev_stepper_home(void *arg)
+void elev_stepper_home(void)
 {
     elev_stepper_init();
     elev_switch_init();
@@ -937,9 +937,9 @@ void app_main(void)
     // these and only these is api
     elev_motors_init();
     vTaskDelay(pdMS_TO_TICKS(10));
-    horz_home(NULL);
+    horz_home();
     vTaskDelay(pdMS_TO_TICKS(10));
-    elev_stepper_home(NULL);
+    elev_stepper_home();
     vTaskDelay(pdMS_TO_TICKS(10));
 
     xTaskCreate(feed_task, "Feeder", 4*1024, NULL, 5, NULL);

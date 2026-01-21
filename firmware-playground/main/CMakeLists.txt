@@ -1,2 +1,5 @@
-idf_component_register(SRCS "controller.c"
-                       INCLUDE_DIRS "." REQUIRES driver esp_timer)
+file(GLOB_RECURSE srcs "main.c" "src/*.c")
+
+idf_component_register(SRCS "${srcs}"
+                       PRIV_REQUIRES driver esp_timer
+                       INCLUDE_DIRS "./include")
