@@ -3,7 +3,8 @@
 #include "heart_rate.h"
 #include "led.h"
 #include "esp_random.h"
-#include <string.h>
+#include "controller.h"
+
 /* Private function declarations */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -365,7 +366,7 @@ static int frankenshot_manualfeed_chr_access(uint16_t conn_handle, uint16_t attr
 
         if (attr_handle == frankenshot_manualfeed_chr_val_handle) {
             ESP_LOGI(TAG, "manual feed command received");
-            // TODO: Trigger manual feed action here
+            request_feed();
             return 0;
         }
         goto error;
