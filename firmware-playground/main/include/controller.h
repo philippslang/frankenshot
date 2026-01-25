@@ -3,7 +3,7 @@
 
 void elev_motors_init(void);
 void horz_home(void);
-void elev_stepper_home(void);
+void elev_home(void);
 void feed_task(void *arg);
 void elev_task(void *arg);
 void horz_task(void *arg);

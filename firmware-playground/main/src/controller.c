@@ -18,24 +18,24 @@ static const char *FTAG = "FEED";
 #define RGB_LED_GPIO            38  // s3 on-board RGB LED
 #define RGB_LED_GPIO            8   // c6 on-board RGB LED
 
-#define FEED_PWM_GPIO           23   // R_PWM
-#define FEED_EN_GPIO            22   // R_EN + L_EN tied together
-#define ELEV_BOTTOM_PWM_GPIO    21
-#define ELEV_BOTTOM_EN_GPIO     20
-#define ELEV_TOP_PWM_GPIO       19
-#define ELEV_TOP_EN_GPIO        18
+#define FEED_PWM_GPIO           19   // R_PWM
+#define FEED_EN_GPIO            20   // R_EN + L_EN tied together
+#define ELEV_BOTTOM_PWM_GPIO    48
+#define ELEV_BOTTOM_EN_GPIO     45
+#define ELEV_TOP_PWM_GPIO       36
+#define ELEV_TOP_EN_GPIO        37
 
-#define FEED_SWITCH_GPIO        3    // NC switch input
-#define HORZ_STEP_SWITCH_GPIO   2
-#define ELEV_STEP_SWITCH_GPIO   11
+#define FEED_SWITCH_GPIO        14    // NC switch input
+#define HORZ_SWITCH_GPIO        12
+#define ELEV_SWITCH_GPIO        13
 
-#define HORZ_STEP_EN_GPIO       6
-#define HORZ_STEP_STEP_GPIO     4
-#define HORZ_STEP_DIR_GPIO      5
+#define HORZ_EN_GPIO            3
+#define HORZ_STEP_GPIO          46
+#define HORZ_DIR_GPIO           9
 
-#define ELEV_STEP_EN_GPIO       1
-#define ELEV_STEP_STEP_GPIO     7
-#define ELEV_STEP_DIR_GPIO      0
+#define ELEV_STEP_EN_GPIO       15
+#define ELEV_STEP_STEP_GPIO     16
+#define ELEV_STEP_DIR_GPIO      17
 
 /* ===== PWM CONFIG ===== */
 #define PWM_LEDC_TIMER       LEDC_TIMER_0
@@ -54,7 +54,7 @@ static const char *FTAG = "FEED";
 #define ELEV_SPIN_DIVISOR     25   // higher = weaker effect
 
 /* ===== STEPPER CONFIG ===== */
-#define HORZ_STEP_DELAY_US     1000   // ping delay, smaller = faster, 1000 safe, limited by Hz
+#define HORZ_STEP_DELAY_US     800   // ping delay, smaller = faster, 1000 safe, limited by Hz
 #define ELEV_STEP_DELAY_US     2000   // ping delay, smaller = faster, 1000 safe, limited by Hz
 
 /* ===== SWITCH CONFIG ===== */
@@ -63,7 +63,7 @@ static const char *FTAG = "FEED";
 #define FEED_POLL_MS      10
 
 
-# define MAIN 9999
+# define MAIN 100
 
 /* ===== FEED ===== */
 typedef enum {
@@ -95,6 +95,8 @@ static int32_t horz_step_counter = 0;
 static int32_t horz_total_steps = 2800; 
 static int32_t horz_target_steps = 0;
 static int32_t horz_dir = 0;
+static bool horz_stepper_enabled = true;
+
 
 /* ===== ELEV ===== */
 typedef enum {
@@ -110,6 +112,7 @@ static int32_t elev_step_counter = 0;
 static int32_t elev_total_steps = 800; 
 static int32_t elev_target_steps = 0;
 static int32_t elev_dir = 0;
+static bool elev_stepper_enabled = true;
 
 static inline bool timed_out(int64_t start_us, int timeout_ms)
 {
@@ -280,7 +283,7 @@ static void pwm_stop(gpio_num_t channel)
 }
 
 
-static void feed_motor_pwm_init(void)
+static void feed_motor_init(void)
 {
     pwm_init(FEED_EN_GPIO, FEED_PWM_GPIO, FEED_LEDC_CHANNEL);
 }
@@ -302,7 +305,7 @@ void feed_task(void *arg)
     int64_t state_start_us = 0;
 
     feed_switch_init();
-    feed_motor_pwm_init();
+    feed_motor_init();
 
     while (1) {
         bool sw = feed_switch_pressed();
@@ -469,36 +472,44 @@ void elev_motors_start(uint32_t speed, uint32_t spin)
 
 static bool horz_switch_pressed(void)
 {
-    return debounce_switch(HORZ_STEP_SWITCH_GPIO);
+    return debounce_switch(HORZ_SWITCH_GPIO);
 }
 
 static void horz_switch_init(void)
 {
-    limit_switch_init(HORZ_STEP_SWITCH_GPIO);
+    limit_switch_init(HORZ_SWITCH_GPIO);
 }
 
 static inline void horz_driver_enable(void)
 {
-    gpio_set_level(HORZ_STEP_EN_GPIO, 0); // active LOW
+    if (horz_stepper_enabled) {
+        return;
+    }
+    gpio_set_level(HORZ_EN_GPIO, 0); // active LOW
+    horz_stepper_enabled = true;
     ESP_LOGI(ETAG, "Horizontal driver enabled");
 }
 
 static inline void horz_driver_disable(void)
 {
-    gpio_set_level(HORZ_STEP_EN_GPIO, 1);
+    if (!horz_stepper_enabled) {
+        return;
+    }
+    gpio_set_level(HORZ_EN_GPIO, 1);
+    horz_stepper_enabled = false;
     ESP_LOGI(ETAG, "Horizontal driver disabled");
 }
 
 static void horz_clockwise(void)
 {
     horz_dir = 0;
-    gpio_set_level(HORZ_STEP_DIR_GPIO, horz_dir);
+    gpio_set_level(HORZ_DIR_GPIO, horz_dir);
 }
 
 static void horz_counterclockwise(void)
 {
     horz_dir = 1;
-    gpio_set_level(HORZ_STEP_DIR_GPIO, horz_dir);
+    gpio_set_level(HORZ_DIR_GPIO, horz_dir);
 }
 
 static void horz_count_step(void)
@@ -525,9 +536,9 @@ static void stepper_init(uint32_t step_gpio, uint32_t dir_gpio, uint32_t en_gpio
 static void horz_stepper_init(void)
 {
     stepper_init(
-        HORZ_STEP_STEP_GPIO,
-        HORZ_STEP_DIR_GPIO,
-        HORZ_STEP_EN_GPIO
+        HORZ_STEP_GPIO,
+        HORZ_DIR_GPIO,
+        HORZ_EN_GPIO
     );
 
     horz_driver_disable();
@@ -536,9 +547,9 @@ static void horz_stepper_init(void)
 
 static void horz_step_pulse(void)
 {
-    gpio_set_level(HORZ_STEP_STEP_GPIO, 1);
+    gpio_set_level(HORZ_STEP_GPIO, 1);
     esp_rom_delay_us(HORZ_STEP_DELAY_US); 
-    gpio_set_level(HORZ_STEP_STEP_GPIO, 0);
+    gpio_set_level(HORZ_STEP_GPIO, 0);
     esp_rom_delay_us(HORZ_STEP_DELAY_US);
 }
 
@@ -568,7 +579,7 @@ static void horz_move_to_step(int32_t pos)
 void horz_move_to_relative(uint32_t rel)
 {
     if (rel > 10 || rel < 0) {
-        ESP_LOGE(TAG, "horz_move_to_relative: invalid value %lu", rel);
+        ESP_LOGE(HTAG, "horz_move_to_relative: invalid value %lu", rel);
         return;
     }
 
@@ -576,7 +587,7 @@ void horz_move_to_relative(uint32_t rel)
 
     int32_t target_step = ((int32_t)rel * range) / 10;
 
-    ESP_LOGI(TAG,
+    ESP_LOGI(HTAG,
         "Horz move: rel=%lu -> step=%ld",
         rel, target_step
     );
@@ -683,23 +694,31 @@ void horz_task(void *arg)
 
 static bool elev_switch_pressed(void)
 {
-    return debounce_switch(ELEV_STEP_SWITCH_GPIO);
+    return debounce_switch(ELEV_SWITCH_GPIO);
 }
 
 static void elev_switch_init(void)
 {
-    limit_switch_init(ELEV_STEP_SWITCH_GPIO);
+    limit_switch_init(ELEV_SWITCH_GPIO);
 }
 
 static inline void elev_driver_enable(void)
 {
+    if (elev_stepper_enabled) {
+        return;
+    }
     gpio_set_level(ELEV_STEP_EN_GPIO, 0); // active LOW
+    elev_stepper_enabled = true;
     ESP_LOGI(ETAG, "Elevation driver enabled");
 }
 
 static inline void elev_driver_disable(void)
 {
+    if (!elev_stepper_enabled) {
+        return;
+    }
     gpio_set_level(ELEV_STEP_EN_GPIO, 1);
+    elev_stepper_enabled = false;
     ESP_LOGI(ETAG, "Elevation driver disabled");
 }
 
@@ -744,7 +763,7 @@ static void elev_step_pulse(void)
     esp_rom_delay_us(ELEV_STEP_DELAY_US);
 }
 
-void elev_stepper_home(void)
+void elev_home(void)
 {
     elev_stepper_init();
     elev_switch_init();
@@ -800,7 +819,7 @@ static void elev_move_to_step(int32_t pos)
 void elev_move_to_relative(uint32_t rel)
 {
     if (rel > 10 || rel < 0) {
-        ESP_LOGE(TAG, "elev_move_to_relative: invalid value %lu", rel);
+        ESP_LOGE(ETAG, "elev_move_to_relative: invalid value %lu", rel);
         return;
     }
 
@@ -808,7 +827,7 @@ void elev_move_to_relative(uint32_t rel)
 
     int32_t target_step = ((int32_t)rel * range) / 10;
 
-    ESP_LOGI(TAG,
+    ESP_LOGI(ETAG,
         "Elev move: rel=%lu -> step=%ld",
         rel, target_step
     );
@@ -817,27 +836,24 @@ void elev_move_to_relative(uint32_t rel)
 }
 
 
-static void elev_moving(void) {
+static void elev_move(void) {
     elev_step_pulse();
     elev_count_step();
 
     if (elev_step_counter >= elev_total_steps){
         elev_step_counter = elev_total_steps;
-        elev_axis_state = ELEV_READY;
-        ESP_LOGI(ETAG, "Reached max limit");
-        elev_driver_disable();
+        elev_counterclockwise();
+        ESP_LOGI(ETAG, "Reached max limit, setting counterclockwise direction");
     }
 
     if (elev_step_counter <= 0){
         elev_step_counter = 0;
-        elev_axis_state = ELEV_READY;
-        ESP_LOGI(ETAG, "Reached min limit");
-        elev_driver_disable();
+        elev_clockwise();
+        ESP_LOGI(ETAG, "Reached min limit, setting clockewise direction");
     }
 
     if (elev_step_counter == elev_target_steps) {
         ESP_LOGI(ETAG, "Target reached");
-        elev_driver_disable();
         elev_axis_state = ELEV_READY;
     }
 }
@@ -847,23 +863,19 @@ void elev_task(void *arg)
     ESP_LOGI(ETAG, "Waiting for elevation request");
 
     while (1) {
-        bool sw = elev_switch_pressed();
-
         switch (elev_axis_state) {
         case ELEV_MOVING:
-            elev_moving();
-            if (sw) {
-                ESP_LOGI(ETAG, "Hit limit switch during move, resetting position");
-                elev_step_counter = 0;
-                elev_axis_state = ELEV_READY;
-            }
+            elev_driver_enable();
+            elev_move();
             break;
 
         case ELEV_READY:
+            elev_driver_disable();
             vTaskDelay(pdMS_TO_TICKS(100));
             break;
         
         default:
+            elev_driver_disable();
             vTaskDelay(pdMS_TO_TICKS(100));
             ESP_LOGI(ETAG, "Unexpected state %d", elev_axis_state);
         }
@@ -888,17 +900,20 @@ void app_main(void)
 #if MAIN == 1
 void app_main(void)
 {
+    horz_stepper_init();
+    elev_stepper_init();
+    vTaskDelay(pdMS_TO_TICKS(10));  
     elev_motors_init();
-    // feed_motor_pwm_init();
+    feed_motor_init();
 
     while (1) {
         ESP_LOGI(TAG, "Motor ON");
-        elev_motors_start(5, 5);
+        feed_motor_start();
         // feed_motor_start();
         vTaskDelay(pdMS_TO_TICKS(10000));
 
         ESP_LOGI(TAG, "Motor OFF");
-        elev_motors_stop();
+        feed_motor_stop();
         // feed_motor_stop();
         vTaskDelay(pdMS_TO_TICKS(4000));
     }
@@ -910,23 +925,41 @@ void app_main(void)
 void app_main(void)
 {
    horz_switch_init();
+   feed_switch_init();
 
    while (1) {
-        bool sw = horz_switch_pressed();
+        bool sw = feed_switch_pressed();
         if (sw) {
-            ESP_LOGI(TAG, "Feed switch PRESSED");
+            ESP_LOGI(TAG, "Switch PRESSED");
         }
         vTaskDelay(pdMS_TO_TICKS(10));
    }
 }
 #endif
 
-// feed test
 #if MAIN == 3
 void app_main(void)
 {
-   xTaskCreate(feed_task, "Feeder", 4*1024, NULL, 5, NULL);
-   return;
+   horz_stepper_init();
+   elev_home();
+   vTaskDelay(pdMS_TO_TICKS(10));
+   xTaskCreate(elev_task, "Elevation", 4*1024, NULL, 5, NULL);
+   vTaskDelay(pdMS_TO_TICKS(1000));   
+   elev_move_to_relative(5);
+   vTaskDelay(pdMS_TO_TICKS(10000));
+}
+#endif
+
+#if MAIN == 4
+void app_main(void)
+{
+   horz_stepper_init();
+   elev_stepper_init();
+   vTaskDelay(pdMS_TO_TICKS(10));
+   xTaskCreate(feed_task, "Feed", 4*1024, NULL, 5, NULL);
+   vTaskDelay(pdMS_TO_TICKS(1000));   
+   feed_requested();
+   vTaskDelay(pdMS_TO_TICKS(1000));
 }
 #endif
 
@@ -939,7 +972,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(10));
     horz_home();
     vTaskDelay(pdMS_TO_TICKS(10));
-    elev_stepper_home();
+    elev_home();
     vTaskDelay(pdMS_TO_TICKS(10));
 
     xTaskCreate(feed_task, "Feeder", 4*1024, NULL, 5, NULL);

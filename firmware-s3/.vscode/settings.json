@@ -5,7 +5,7 @@
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.portWin": "COM11",
+  "idf.portWin": "detect",
   "idf.toolsPathWin": "C:\\Users\\phili\\.espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -14,7 +14,6 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=c:\\Users\\phili\\git\\frankenshot\\firmware-playground\\build"
-  ],
-  "idf.flashType": "UART"
+    "--compile-commands-dir=c:\\Users\\phili\\git\\frankenshot\\firmware-s3\\build"
+  ]
 }
