@@ -82,6 +82,7 @@ void app_main(void) {
     esp_err_t ret;
 
     led_init();
+    steppers_init();
 
     /*
      * NVS flash initialization

@@ -776,6 +776,7 @@ void elev_home(void)
                 ESP_LOGI(ETAG, "Homing done");
                 elev_step_counter = 0;
                 elev_axis_state = ELEV_READY;
+                elev_driver_disable();
                 return;
             }
             elev_step_pulse();
@@ -874,6 +875,12 @@ void elev_task(void *arg)
             ESP_LOGI(ETAG, "Unexpected state %d", elev_axis_state);
         }
     }
+}
+
+void steppers_init(void)
+{
+    horz_stepper_init();
+    elev_stepper_init();
 }
 
 // Led control
