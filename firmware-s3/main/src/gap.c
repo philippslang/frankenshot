@@ -2,6 +2,10 @@
 #include "common.h"
 #include "gatt_svc.h"
 
+#include "host/ble_uuid.h"
+#include "host/util/util.h"
+#include "nimble/ble.h"
+
 inline static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
 static void start_advertising(void);

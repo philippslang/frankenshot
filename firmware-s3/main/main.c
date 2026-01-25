@@ -5,6 +5,9 @@
 #include "controller.h"
 #include "led.h"
 
+#include "host/ble_hs.h"
+#include "nimble/nimble_port.h"
+
 
 void ble_store_config_init(void);
 
@@ -79,7 +82,6 @@ void app_main(void) {
     esp_err_t ret;
 
     led_init();
-    feed_motor_init();
 
     /*
      * NVS flash initialization

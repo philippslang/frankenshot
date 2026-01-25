@@ -1,5 +1,4 @@
 #include "common.h"
-#include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "led_strip.h"
 
