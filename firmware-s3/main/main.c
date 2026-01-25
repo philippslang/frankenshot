@@ -133,7 +133,9 @@ void app_main(void) {
     /* Initialize motors and home steppers */
     elev_motors_init();
     horz_home();   /* Blocking - homes horizontal axis */
+    vTaskDelay(pdMS_TO_TICKS(10));
     elev_home();   /* Blocking - homes elevation axis */
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     /*
      * NVS flash initialization
@@ -176,6 +178,8 @@ void app_main(void) {
 
     /* NimBLE host configuration initialization */
     nimble_host_config_init();
+
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     /* Start NimBLE host task thread and return */
     xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);

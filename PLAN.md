@@ -103,3 +103,7 @@ we get true if the switch is triggered AND if the wire is broken/disconnected an
 
 ## order
 - female logic wires all colors
+
+## todo
+- don't stop propulsion during pause
+- detect bluetooth disconnect in app

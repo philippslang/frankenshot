@@ -443,7 +443,7 @@ void elev_motors_stop(void)
 
 void elev_motors_start(uint32_t speed, uint32_t spin)
 {
-    if (spin < 0 || spin > 10) {
+    if (spin > 10) {
         ESP_LOGE(TAG, "elev_motors_start: invalid spin %d", spin);
         return;
     }
@@ -564,7 +564,11 @@ static void horz_step_pulse(void)
 
 static void horz_move_to_step(int32_t pos)
 {
-    ESP_LOGI(HTAG, "Move to position %ld", pos);
+    if (pos == horz_step_counter) {
+        ESP_LOGI(HTAG, "Already at position %ld", pos);
+        return;
+    }
+    ESP_LOGI(HTAG, "Move to position %ld from %ld", pos, horz_step_counter);
     if (horz_axis_state != AXIS_READY) 
     {
         ESP_LOGI(HTAG, "Axis not ready, cannot move");
@@ -623,7 +627,7 @@ static void horz_moving(void) {
     }
 
     if (horz_step_counter == horz_target_steps) {
-        ESP_LOGI(HTAG, "Target reached");
+        ESP_LOGI(HTAG, "Target reached %ld", horz_step_counter);
         horz_driver_disable();
         horz_axis_state = AXIS_READY;
     }
@@ -683,8 +687,6 @@ void horz_task(void *arg)
     ESP_LOGI(HTAG, "Waiting for horizontal request");
 
     while (1) {
-        bool sw = horz_switch_pressed();
-
         switch (horz_axis_state) {
         case AXIS_MOVING:
             horz_moving();
@@ -805,7 +807,11 @@ void elev_home(void)
 
 static void elev_move_to_step(int32_t pos)
 {
-    ESP_LOGI(ETAG, "Move to position %ld", pos);
+    if (pos == elev_step_counter) {
+        ESP_LOGI(ETAG, "Already at position %ld", pos);
+        return;
+    }
+    ESP_LOGI(ETAG, "Move to position %ld from %ld", pos, elev_step_counter);
     if (elev_axis_state != ELEV_READY) 
     {
         ESP_LOGI(ETAG, "Elevation not ready, cannot move");
@@ -863,7 +869,7 @@ static void elev_move(void) {
     }
 
     if (elev_step_counter == elev_target_steps) {
-        ESP_LOGI(ETAG, "Target reached");
+        ESP_LOGI(ETAG, "Target reached %ld", elev_step_counter);
         elev_axis_state = ELEV_READY;
     }
 }

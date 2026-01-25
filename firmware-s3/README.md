@@ -15,3 +15,7 @@ In terms of ble characterisitics, the program and current state are characterist
 - feeding (indication, read/write)
 - manual feed, boolean command (write)
 On start-up some default state will be used, with feeding set to on. After ball fed the esp will start countdown of that config timer, move on to the next configuration in the list, get to this position, and after countdown expires move on again, or wrap back to the first one if last. On manual feed sets state to pause and triggers a ball feed, sets manual feed back to false.
+
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=45
+CONFIG_BLINK_GPIO=38
+
