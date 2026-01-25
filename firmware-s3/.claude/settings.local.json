@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s /b)"
+    ]
+  },
+  "deny": [
+      "Read(.vscode/**)",
+      "Read(build/**)",
+      "Read(sdkconfig*)",
+      "Read(dependencies.lock)",
+      "Read(managed_components/**)"
+    ]
+}
