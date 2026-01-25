@@ -12,9 +12,6 @@
 #include "led_strip.h"
 #include "sdkconfig.h"
 
-/* Defines */
-#define BLINK_GPIO CONFIG_BLINK_GPIO
-
 /* Public function declarations */
 uint8_t get_led_state(void);
 void led_on(void);
