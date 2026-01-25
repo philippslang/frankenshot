@@ -40,5 +40,8 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 int gatt_svc_init(void);
 const frankenshot_config_t *get_frankenshot_config(void);
 bool get_frankenshot_feeding(void);
+const frankenshot_program_t *get_frankenshot_program(void);
+void set_current_config_index(uint8_t idx);
+uint8_t get_current_config_index(void);
 
 #endif // GATT_SVR_H

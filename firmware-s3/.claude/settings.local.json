@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir /s /b)"
+      "Bash(dir /s /b)",
+      "Bash(idf.py build:*)"
     ],
     "deny": [
       "Read(.vscode/**)",

@@ -88,6 +88,9 @@ static frankenshot_program_t frankenshot_program = {
     .configs = {{0}}
 };
 
+/* Current config index within program */
+static uint8_t current_config_index = 0;
+
 /* Frankenshot config indication tracking */
 static uint16_t frankenshot_config_chr_conn_handle = 0;
 static bool frankenshot_config_chr_conn_handle_inited = false;
@@ -366,6 +369,8 @@ static int frankenshot_manualfeed_chr_access(uint16_t conn_handle, uint16_t attr
 
         if (attr_handle == frankenshot_manualfeed_chr_val_handle) {
             ESP_LOGI(TAG, "manual feed command received");
+            frankenshot_feeding = false;  /* Pause program */
+            send_frankenshot_feeding_indication();
             request_feed();
             return 0;
         }
@@ -430,6 +435,7 @@ static int frankenshot_program_chr_access(uint16_t conn_handle, uint16_t attr_ha
             }
 
             memcpy(&frankenshot_program, ctxt->om->om_data, ctxt->om->om_len);
+            current_config_index = 0;  /* Reset to first config */
             ESP_LOGI(TAG, "frankenshot program updated: id=%d count=%d",
                      frankenshot_program.id, frankenshot_program.count);
             for (int i = 0; i < frankenshot_program.count; i++) {
@@ -588,6 +594,22 @@ const frankenshot_config_t *get_frankenshot_config(void) {
 
 bool get_frankenshot_feeding(void) {
     return frankenshot_feeding;
+}
+
+const frankenshot_program_t *get_frankenshot_program(void) {
+    return &frankenshot_program;
+}
+
+void set_current_config_index(uint8_t idx) {
+    current_config_index = idx;
+    /* Update frankenshot_config to reflect current program config */
+    if (frankenshot_program.count > 0 && idx < frankenshot_program.count) {
+        frankenshot_config = frankenshot_program.configs[idx];
+    }
+}
+
+uint8_t get_current_config_index(void) {
+    return current_config_index;
 }
 
 void send_frankenshot_config_indication(void) {

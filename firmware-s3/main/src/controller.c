@@ -188,6 +188,21 @@ void request_feed(void)
     s_feed_requested = true;
 }
 
+bool is_horz_ready(void)
+{
+    return horz_axis_state == AXIS_READY;
+}
+
+bool is_elev_ready(void)
+{
+    return elev_axis_state == ELEV_READY;
+}
+
+bool is_feed_pending(void)
+{
+    return s_feed_requested;
+}
+
 static bool feed_requested(void)
 {
     return s_feed_requested;
