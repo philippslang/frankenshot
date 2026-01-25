@@ -1,12 +1,9 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
 #ifndef GATT_SVR_H
 #define GATT_SVR_H
 
-/* Includes */
+#include <stdbool.h>
+#include <stdint.h>
+
 /* NimBLE GATT APIs */
 #include "host/ble_gatt.h"
 #include "services/gatt/ble_svc_gatt.h"
@@ -14,10 +11,34 @@
 /* NimBLE GAP APIs */
 #include "host/ble_gap.h"
 
+/* Frankenshot configuration structure */
+typedef struct {
+    uint8_t speed;
+    uint8_t height;
+    uint8_t time_between_balls;
+    uint8_t spin;
+    uint8_t horizontal;
+} frankenshot_config_t;
+
+/* Frankenshot program structure */
+#define FRANKENSHOT_PROGRAM_MAX_CONFIGS 8
+
+typedef struct {
+    uint8_t id;
+    uint8_t count;  /* number of configs in use */
+    frankenshot_config_t configs[FRANKENSHOT_PROGRAM_MAX_CONFIGS];
+} frankenshot_program_t;
+
 /* Public function declarations */
 void send_heart_rate_indication(void);
+void send_frankenshot_config_indication(void);
+void send_frankenshot_feeding_indication(void);
+void update_frankenshot_config(void);
+void update_frankenshot_feeding(void);
 void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
 void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 int gatt_svc_init(void);
+const frankenshot_config_t *get_frankenshot_config(void);
+bool get_frankenshot_feeding(void);
 
 #endif // GATT_SVR_H

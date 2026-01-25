@@ -1,21 +1,31 @@
-/*
- * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "gatt_svc.h"
 #include "common.h"
 #include "heart_rate.h"
 #include "led.h"
-
+#include "esp_random.h"
+#include <string.h>
 /* Private function declarations */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg);
 static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                           struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_feeding_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_manualfeed_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                             struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_program_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_config_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_feeding_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_manualfeed_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                             struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int frankenshot_program_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg);
 
-/* Private variables */
 /* Heart rate service */
 static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x180D);
 
@@ -33,6 +43,59 @@ static uint16_t led_chr_val_handle;
 static const ble_uuid128_t led_chr_uuid =
     BLE_UUID128_INIT(0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef,
                      0x12, 0x12, 0x25, 0x15, 0x00, 0x00);
+
+/* Frankenshot service */
+static const ble_uuid128_t frankenshot_svc_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x00, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+static uint16_t frankenshot_config_chr_val_handle;
+static const ble_uuid128_t frankenshot_config_chr_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x01, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+
+static uint16_t frankenshot_feeding_chr_val_handle;
+static const ble_uuid128_t frankenshot_feeding_chr_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x02, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+
+static uint16_t frankenshot_manualfeed_chr_val_handle;
+static const ble_uuid128_t frankenshot_manualfeed_chr_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x03, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+
+static uint16_t frankenshot_program_chr_val_handle;
+static const ble_uuid128_t frankenshot_program_chr_uuid =
+    BLE_UUID128_INIT(0x00, 0x00, 0x00, 0x04, 0x46, 0x52, 0x41, 0x4e,
+                     0x4b, 0x45, 0x4e, 0x53, 0x48, 0x4f, 0x54, 0x01);
+
+/* Frankenshot configuration data */
+static frankenshot_config_t frankenshot_config = {
+    .speed = 0,
+    .height = 0,
+    .time_between_balls = 0,
+    .spin = 0,
+    .horizontal = 0
+};
+
+/* Frankenshot feeding state */
+static bool frankenshot_feeding = false;
+
+/* Frankenshot program data */
+static frankenshot_program_t frankenshot_program = {
+    .id = 0,
+    .count = 0,
+    .configs = {{0}}
+};
+
+/* Frankenshot config indication tracking */
+static uint16_t frankenshot_config_chr_conn_handle = 0;
+static bool frankenshot_config_chr_conn_handle_inited = false;
+static bool frankenshot_config_ind_status = false;
+
+/* Frankenshot feeding indication tracking */
+static uint16_t frankenshot_feeding_chr_conn_handle = 0;
+static bool frankenshot_feeding_chr_conn_handle_inited = false;
+static bool frankenshot_feeding_ind_status = false;
 
 /* GATT services table */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
@@ -63,15 +126,61 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                                         {0}},
     },
 
+    /* Frankenshot service */
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &frankenshot_svc_uuid.u,
+        .characteristics =
+            (struct ble_gatt_chr_def[]){/* Configuration characteristic */
+                                        {.uuid = &frankenshot_config_chr_uuid.u,
+                                         .access_cb = frankenshot_config_chr_access,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE,
+                                         .val_handle = &frankenshot_config_chr_val_handle,
+                                         .descriptors = (struct ble_gatt_dsc_def[]){
+                                             {.uuid = BLE_UUID16_DECLARE(0x2901),
+                                              .att_flags = BLE_ATT_F_READ,
+                                              .access_cb = frankenshot_config_dsc_access},
+                                             {0}}},
+                                        /* Feeding characteristic */
+                                        {.uuid = &frankenshot_feeding_chr_uuid.u,
+                                         .access_cb = frankenshot_feeding_chr_access,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_INDICATE,
+                                         .val_handle = &frankenshot_feeding_chr_val_handle,
+                                         .descriptors = (struct ble_gatt_dsc_def[]){
+                                             {.uuid = BLE_UUID16_DECLARE(0x2901),
+                                              .att_flags = BLE_ATT_F_READ,
+                                              .access_cb = frankenshot_feeding_dsc_access},
+                                             {0}}},
+                                        /* Manual feed command characteristic */
+                                        {.uuid = &frankenshot_manualfeed_chr_uuid.u,
+                                         .access_cb = frankenshot_manualfeed_chr_access,
+                                         .flags = BLE_GATT_CHR_F_WRITE,
+                                         .val_handle = &frankenshot_manualfeed_chr_val_handle,
+                                         .descriptors = (struct ble_gatt_dsc_def[]){
+                                             {.uuid = BLE_UUID16_DECLARE(0x2901),
+                                              .att_flags = BLE_ATT_F_READ,
+                                              .access_cb = frankenshot_manualfeed_dsc_access},
+                                             {0}}},
+                                        /* Program characteristic */
+                                        {.uuid = &frankenshot_program_chr_uuid.u,
+                                         .access_cb = frankenshot_program_chr_access,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
+                                         .val_handle = &frankenshot_program_chr_val_handle,
+                                         .descriptors = (struct ble_gatt_dsc_def[]){
+                                             {.uuid = BLE_UUID16_DECLARE(0x2901),
+                                              .att_flags = BLE_ATT_F_READ,
+                                              .access_cb = frankenshot_program_dsc_access},
+                                             {0}}},
+                                        {0}},
+    },
+
     {
         0, /* No more services. */
     },
 };
 
-/* Private functions */
 static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
     int rc = 0;
 
     /* Handle access events */
@@ -114,7 +223,6 @@ error:
 
 static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                           struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
     int rc = 0;
 
     /* Handle access events */
@@ -164,7 +272,226 @@ error:
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* Public functions */
+static int frankenshot_config_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    int rc = 0;
+
+    switch (ctxt->op) {
+
+    case BLE_GATT_ACCESS_OP_READ_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot config read; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_config_chr_val_handle) {
+            rc = os_mbuf_append(ctxt->om, &frankenshot_config,
+                                sizeof(frankenshot_config));
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        goto error;
+
+    default:
+        goto error;
+    }
+
+error:
+    ESP_LOGE(TAG,
+             "unexpected access operation to frankenshot config characteristic, opcode: %d",
+             ctxt->op);
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_feeding_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    int rc = 0;
+
+    switch (ctxt->op) {
+
+    case BLE_GATT_ACCESS_OP_READ_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot feeding read; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_feeding_chr_val_handle) {
+            uint8_t val = frankenshot_feeding ? 1 : 0;
+            rc = os_mbuf_append(ctxt->om, &val, sizeof(val));
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        goto error;
+
+    case BLE_GATT_ACCESS_OP_WRITE_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot feeding write; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_feeding_chr_val_handle) {
+            if (ctxt->om->om_len == 1) {
+                frankenshot_feeding = ctxt->om->om_data[0] != 0;
+                ESP_LOGI(TAG, "frankenshot feeding updated: %s",
+                         frankenshot_feeding ? "true" : "false");
+                send_frankenshot_feeding_indication();
+            } else {
+                ESP_LOGE(TAG, "invalid feeding size: %d (expected 1)",
+                         ctxt->om->om_len);
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            return rc;
+        }
+        goto error;
+
+    default:
+        goto error;
+    }
+
+error:
+    ESP_LOGE(TAG,
+             "unexpected access operation to frankenshot feeding characteristic, opcode: %d",
+             ctxt->op);
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_manualfeed_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    switch (ctxt->op) {
+
+    case BLE_GATT_ACCESS_OP_WRITE_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot manualfeed write; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_manualfeed_chr_val_handle) {
+            ESP_LOGI(TAG, "manual feed command received");
+            // TODO: Trigger manual feed action here
+            return 0;
+        }
+        goto error;
+
+    default:
+        goto error;
+    }
+
+error:
+    ESP_LOGE(TAG,
+             "unexpected access operation to frankenshot manualfeed characteristic, opcode: %d",
+             ctxt->op);
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_program_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    int rc = 0;
+
+    switch (ctxt->op) {
+
+    case BLE_GATT_ACCESS_OP_READ_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot program read; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_program_chr_val_handle) {
+            /* Send id + count + only the configs in use */
+            size_t size = 2 + (frankenshot_program.count * sizeof(frankenshot_config_t));
+            rc = os_mbuf_append(ctxt->om, &frankenshot_program, size);
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        goto error;
+
+    case BLE_GATT_ACCESS_OP_WRITE_CHR:
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "frankenshot program write; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        }
+
+        if (attr_handle == frankenshot_program_chr_val_handle) {
+            /* Minimum size is 2 bytes (id + count) */
+            if (ctxt->om->om_len < 2) {
+                ESP_LOGE(TAG, "program data too short: %d", ctxt->om->om_len);
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+
+            uint8_t new_count = ctxt->om->om_data[1];
+            if (new_count > FRANKENSHOT_PROGRAM_MAX_CONFIGS) {
+                ESP_LOGE(TAG, "program count too large: %d (max %d)",
+                         new_count, FRANKENSHOT_PROGRAM_MAX_CONFIGS);
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+
+            size_t expected_size = 2 + (new_count * sizeof(frankenshot_config_t));
+            if (ctxt->om->om_len != expected_size) {
+                ESP_LOGE(TAG, "invalid program size: %d (expected %d)",
+                         ctxt->om->om_len, expected_size);
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+
+            memcpy(&frankenshot_program, ctxt->om->om_data, ctxt->om->om_len);
+            ESP_LOGI(TAG, "frankenshot program updated: id=%d count=%d",
+                     frankenshot_program.id, frankenshot_program.count);
+            for (int i = 0; i < frankenshot_program.count; i++) {
+                frankenshot_config_t *cfg = &frankenshot_program.configs[i];
+                ESP_LOGI(TAG, "  config[%d]: speed=%d height=%d time=%d spin=%d horizontal=%d",
+                         i, cfg->speed, cfg->height, cfg->time_between_balls,
+                         cfg->spin, cfg->horizontal);
+            }
+            return rc;
+        }
+        goto error;
+
+    default:
+        goto error;
+    }
+
+error:
+    ESP_LOGE(TAG,
+             "unexpected access operation to frankenshot program characteristic, opcode: %d",
+             ctxt->op);
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_config_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                         struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    static const char *desc = "Configuration";
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_DSC) {
+        int rc = os_mbuf_append(ctxt->om, desc, strlen(desc));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_feeding_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    static const char *desc = "Feeding";
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_DSC) {
+        int rc = os_mbuf_append(ctxt->om, desc, strlen(desc));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_manualfeed_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    static const char *desc = "Manual Feed";
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_DSC) {
+        int rc = os_mbuf_append(ctxt->om, desc, strlen(desc));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
+static int frankenshot_program_dsc_access(uint16_t conn_handle, uint16_t attr_handle,
+                                          struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    static const char *desc = "Program";
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_DSC) {
+        int rc = os_mbuf_append(ctxt->om, desc, strlen(desc));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 void send_heart_rate_indication(void) {
     if (heart_rate_ind_status && heart_rate_chr_conn_handle_inited) {
         ble_gatts_indicate(heart_rate_chr_conn_handle,
@@ -180,7 +507,6 @@ void send_heart_rate_indication(void) {
  *      - Descriptor register event
  */
 void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
-    /* Local variables */
     char buf[BLE_UUID_STR_LEN];
 
     /* Handle GATT attributes register events */
@@ -220,7 +546,6 @@ void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
  *  GATT server subscribe event callback
  *      1. Update heart rate subscription status
  */
-
 void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
     /* Check connection handle */
     if (event->subscribe.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
@@ -238,6 +563,63 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
         heart_rate_chr_conn_handle_inited = true;
         heart_rate_ind_status = event->subscribe.cur_indicate;
     }
+
+    /* Check for frankenshot config subscription */
+    if (event->subscribe.attr_handle == frankenshot_config_chr_val_handle) {
+        /* Update frankenshot config subscription status */
+        frankenshot_config_chr_conn_handle = event->subscribe.conn_handle;
+        frankenshot_config_chr_conn_handle_inited = true;
+        frankenshot_config_ind_status = event->subscribe.cur_indicate;
+    }
+
+    /* Check for frankenshot feeding subscription */
+    if (event->subscribe.attr_handle == frankenshot_feeding_chr_val_handle) {
+        /* Update frankenshot feeding subscription status */
+        frankenshot_feeding_chr_conn_handle = event->subscribe.conn_handle;
+        frankenshot_feeding_chr_conn_handle_inited = true;
+        frankenshot_feeding_ind_status = event->subscribe.cur_indicate;
+    }
+}
+
+const frankenshot_config_t *get_frankenshot_config(void) {
+    return &frankenshot_config;
+}
+
+bool get_frankenshot_feeding(void) {
+    return frankenshot_feeding;
+}
+
+void send_frankenshot_config_indication(void) {
+    if (frankenshot_config_ind_status && frankenshot_config_chr_conn_handle_inited) {
+        ble_gatts_indicate(frankenshot_config_chr_conn_handle,
+                           frankenshot_config_chr_val_handle);
+        ESP_LOGI(TAG, "frankenshot config indication sent!");
+    }
+}
+
+void send_frankenshot_feeding_indication(void) {
+    if (frankenshot_feeding_ind_status && frankenshot_feeding_chr_conn_handle_inited) {
+        ble_gatts_indicate(frankenshot_feeding_chr_conn_handle,
+                           frankenshot_feeding_chr_val_handle);
+        ESP_LOGI(TAG, "frankenshot feeding indication sent!");
+    }
+}
+
+void update_frankenshot_config(void) {
+    frankenshot_config.speed = (uint8_t)(esp_random() % 11);
+    frankenshot_config.height = (uint8_t)(esp_random() % 11);
+    frankenshot_config.time_between_balls = (uint8_t)(esp_random() % 11);
+    frankenshot_config.spin = (uint8_t)(esp_random() % 11);
+    frankenshot_config.horizontal = (uint8_t)(esp_random() % 11);
+    ESP_LOGI(TAG, "config updated: speed=%d height=%d time=%d spin=%d horizontal=%d",
+             frankenshot_config.speed, frankenshot_config.height,
+             frankenshot_config.time_between_balls, frankenshot_config.spin,
+             frankenshot_config.horizontal);
+}
+
+void update_frankenshot_feeding(void) {
+    frankenshot_feeding = !frankenshot_feeding;
+    ESP_LOGI(TAG, "feeding updated: %s", frankenshot_feeding ? "true" : "false");
 }
 
 /*

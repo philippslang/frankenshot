@@ -1,25 +1,16 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "common.h"
 #include "gap.h"
 #include "gatt_svc.h"
 #include "heart_rate.h"
 #include "led.h"
 
-/* Library function declarations */
 void ble_store_config_init(void);
 
-/* Private function declarations */
 static void on_stack_reset(int reason);
 static void on_stack_sync(void);
 static void nimble_host_config_init(void);
 static void nimble_host_task(void *param);
 
-/* Private functions */
 /*
  *  Stack event callback functions
  *      - on_stack_reset is called when host resets BLE stack due to errors
@@ -47,7 +38,6 @@ static void nimble_host_config_init(void) {
 }
 
 static void nimble_host_task(void *param) {
-    /* Task entry log */
     ESP_LOGI(TAG, "nimble host task has been started!");
 
     /* This function won't return until nimble_port_stop() is executed */
@@ -57,21 +47,25 @@ static void nimble_host_task(void *param) {
     vTaskDelete(NULL);
 }
 
-static void heart_rate_task(void *param) {
-    /* Task entry log */
-    ESP_LOGI(TAG, "heart rate task has been started!");
+static void indication_task(void *param) {
+    ESP_LOGI(TAG, "indication task has been started!");
 
-    /* Loop forever */
     while (1) {
-        /* Update heart rate value every 1 second */
         update_heart_rate();
-        ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
+        update_frankenshot_config();
+        update_frankenshot_feeding();
 
         /* Send heart rate indication if enabled */
         send_heart_rate_indication();
 
+        /* Send frankenshot config indication if enabled */
+        send_frankenshot_config_indication();
+
+        /* Send frankenshot feeding indication if enabled */
+        send_frankenshot_feeding_indication();
+
         /* Sleep */
-        vTaskDelay(HEART_RATE_TASK_PERIOD);
+        vTaskDelay(MOCK_RATE_TASK_PERIOD);
     }
 
     /* Clean up at exit */
@@ -79,11 +73,9 @@ static void heart_rate_task(void *param) {
 }
 
 void app_main(void) {
-    /* Local variables */
     int rc = 0;
     esp_err_t ret;
 
-    /* LED initialization */
     led_init();
 
     /*
@@ -130,6 +122,6 @@ void app_main(void) {
 
     /* Start NimBLE host task thread and return */
     xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
-    xTaskCreate(heart_rate_task, "Heart Rate", 4*1024, NULL, 5, NULL);
+    xTaskCreate(indication_task, "Indicators", 4*1024, NULL, 5, NULL);
     return;
 }
