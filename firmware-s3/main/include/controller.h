@@ -14,6 +14,4 @@ void elev_motors_start(uint32_t speed, uint32_t spin);
 void elev_motors_stop(void);
 void request_feed(void);
 
-
-
 #endif // CONTROLLER_H

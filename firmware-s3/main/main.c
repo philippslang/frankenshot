@@ -32,13 +32,11 @@ static void on_stack_sync(void) {
 }
 
 static void nimble_host_config_init(void) {
-    /* Set host callbacks */
     ble_hs_cfg.reset_cb = on_stack_reset;
     ble_hs_cfg.sync_cb = on_stack_sync;
     ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
-    /* Store host configuration */
     ble_store_config_init();
 }
 
@@ -60,16 +58,10 @@ static void indication_task(void *param) {
         update_frankenshot_config();
         update_frankenshot_feeding();
 
-        /* Send heart rate indication if enabled */
         send_heart_rate_indication();
-
-        /* Send frankenshot config indication if enabled */
         send_frankenshot_config_indication();
-
-        /* Send frankenshot feeding indication if enabled */
         send_frankenshot_feeding_indication();
 
-        /* Sleep */
         vTaskDelay(MOCK_RATE_TASK_PERIOD);
     }
 

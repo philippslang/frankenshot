@@ -9,7 +9,7 @@ void main() {
 }
 
 class BleService {
-  static const String _deviceAddress = 'D0:CF:13:06:6B:36';
+  static const String _deviceAddress = '80:B5:4E:D5:F8:4A';
   static const String _serviceUuid = '01544f48-534e-454b-4e41-524600000000';
   static const String _currentConfigCharUuid = '01544f48-534e-454b-4e41-524601000000';
   static const String _feedingCharUuid = '01544f48-534e-454b-4e41-524602000000';
