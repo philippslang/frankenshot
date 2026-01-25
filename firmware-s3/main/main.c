@@ -2,7 +2,9 @@
 #include "gap.h"
 #include "gatt_svc.h"
 #include "heart_rate.h"
+#include "controller.h"
 #include "led.h"
+
 
 void ble_store_config_init(void);
 
@@ -77,6 +79,7 @@ void app_main(void) {
     esp_err_t ret;
 
     led_init();
+    feed_motor_init();
 
     /*
      * NVS flash initialization
@@ -123,5 +126,9 @@ void app_main(void) {
     /* Start NimBLE host task thread and return */
     xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
     xTaskCreate(indication_task, "Indicators", 4*1024, NULL, 5, NULL);
+
+    /* Start controller tasks */
+    xTaskCreate(feed_task, "Feeder", 4*1024, NULL, 5, NULL);
+
     return;
 }
