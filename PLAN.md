@@ -105,5 +105,6 @@ we get true if the switch is triggered AND if the wire is broken/disconnected an
 - female logic wires all colors
 
 ## todo
-- don't stop propulsion during pause
-- detect bluetooth disconnect in app
+- don't stop propulsion during pause for manual feed? not yet
+- Overdrive then coast (feed-synchronized)
+- ramp ups

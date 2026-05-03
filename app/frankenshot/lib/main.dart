@@ -24,6 +24,7 @@ class BleService {
   int _programId = 0;
   StreamSubscription<List<int>>? _currentConfigSubscription;
   StreamSubscription<List<int>>? _feedingSubscription;
+  StreamSubscription<BluetoothConnectionState>? _deviceConnectionSubscription;
 
   final _connectionStateController = StreamController<bool>.broadcast();
   final _feedingStateController = StreamController<bool>.broadcast();
@@ -43,12 +44,33 @@ class BleService {
       _isConnected = true;
       _connectionStateController.add(true);
 
+      // Listen for disconnection events
+      _deviceConnectionSubscription?.cancel();
+      _deviceConnectionSubscription = _device!.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _handleDisconnection();
+        }
+      });
+
       await _discoverServices();
     } catch (e) {
       _isConnected = false;
       _connectionStateController.add(false);
       rethrow;
     }
+  }
+
+  void _handleDisconnection() {
+    _isConnected = false;
+    _connectionStateController.add(false);
+    _currentConfigSubscription?.cancel();
+    _currentConfigSubscription = null;
+    _feedingSubscription?.cancel();
+    _feedingSubscription = null;
+    _currentConfigCharacteristic = null;
+    _feedingCharacteristic = null;
+    _manualFeedCharacteristic = null;
+    _programCharacteristic = null;
   }
 
   Future<void> _discoverServices() async {
@@ -159,6 +181,8 @@ class BleService {
   }
 
   Future<void> disconnect() async {
+    await _deviceConnectionSubscription?.cancel();
+    _deviceConnectionSubscription = null;
     await _currentConfigSubscription?.cancel();
     await _feedingSubscription?.cancel();
     await _device?.disconnect();
@@ -167,6 +191,7 @@ class BleService {
   }
 
   void dispose() {
+    _deviceConnectionSubscription?.cancel();
     _currentConfigSubscription?.cancel();
     _feedingSubscription?.cancel();
     _connectionStateController.close();
